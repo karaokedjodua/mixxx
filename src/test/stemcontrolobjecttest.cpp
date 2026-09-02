@@ -13,7 +13,9 @@
 
 namespace {
 const std::vector<std::string> supportedCodecs = {
+#if !defined(Q_OS_WIN)
         "AAC_256kbps_VBR",
+#endif
         "ALAC_24bit"};
 } // namespace
 
@@ -193,7 +195,14 @@ TEST_P(StemControlFixture, StemColor) {
     EXPECT_EQ(m_pStem4Color->get(), 0xad << 16 | 0x65 << 8 | 0xff);
 }
 
-TEST_P(StemControlFixture, Volume) {
+// dj-station: два теста ниже сверяют выход движка с золотыми буферами и
+// гниют от любой смены версии FFmpeg или SoundTouch — их держим выключенными
+// отдельно. Остальные проверки (число дорожек, цвета, сброс громкости при
+// загрузке) буферов не трогают и включены: молча выключенный набор целиком
+// выглядел как проверка, ничего не проверяя.
+class StemGoldenFixture : public StemControlFixture {};
+
+TEST_P(StemGoldenFixture, Volume) {
     m_pChannel1->getEngineBuffer()->queueNewPlaypos(
             mixxx::audio::FramePos{0}, EngineBuffer::SEEK_STANDARD);
     m_pPlay->set(1.0);
@@ -280,7 +289,7 @@ TEST_P(StemControlFixture, VolumeResetOnLoad) {
     EXPECT_EQ(m_pStem4Mute->get(), 0.0);
 }
 
-TEST_P(StemControlFixture, Mute) {
+TEST_P(StemGoldenFixture, Mute) {
     m_pChannel1->getEngineBuffer()->queueNewPlaypos(
             mixxx::audio::FramePos{0}, EngineBuffer::SEEK_STANDARD);
     m_pPlay->set(1.0);
@@ -333,9 +342,17 @@ TEST_P(StemControlFixture, Mute) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-        DISABLED_StemControlTest,
+        StemControlTest,
         StemControlFixture,
         ::testing::ValuesIn(supportedCodecs),
         [](const testing::TestParamInfo<StemControlFixture::ParamType>& info) {
+            return info.param;
+        });
+
+INSTANTIATE_TEST_SUITE_P(
+        DISABLED_StemGoldenTest,
+        StemGoldenFixture,
+        ::testing::ValuesIn(supportedCodecs),
+        [](const testing::TestParamInfo<StemGoldenFixture::ParamType>& info) {
             return info.param;
         });
