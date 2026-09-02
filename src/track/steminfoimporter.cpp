@@ -115,11 +115,25 @@ bool StemInfoImporter::hasStemAtom(const QString& filePath) {
 }
 
 // static
+QString StemInfoImporter::vdjStemsSidecarPath(const QString& filePath) {
+    if (filePath.isEmpty() ||
+            filePath.endsWith(kVdjStemsExtension, Qt::CaseInsensitive)) {
+        return {};
+    }
+    const QString sidecar = filePath + kVdjStemsExtension;
+    return QFile::exists(sidecar) ? sidecar : QString();
+}
+
+// static
 bool StemInfoImporter::maybeStemFile(
         const QString& fileName, QMimeType mimeType) {
     // dj-station: .vdjstems опознаём по расширению. Определять по MIME нельзя —
     // это обычный Matroska, неотличимый от видеофайла.
     if (fileName.endsWith(kVdjStemsExtension, Qt::CaseInsensitive)) {
+        return true;
+    }
+    // Трек, рядом с которым лежат стемы, тоже стемовый.
+    if (!vdjStemsSidecarPath(fileName).isEmpty()) {
         return true;
     }
     if (!mimeType.isValid() || mimeType.isDefault()) {
@@ -142,7 +156,9 @@ QList<StemInfo> StemInfoImporter::importStemInfos(
         const QString& filePath) {
     // dj-station: у .vdjstems манифеста нет — отдаём раскладку, к которой
     // сводятся пять дорожек VirtualDJ (бочка и хэты складываются в ударные).
-    if (filePath.endsWith(kVdjStemsExtension, Qt::CaseInsensitive)) {
+    // Так же отвечаем для трека, рядом с которым эти стемы лежат.
+    if (filePath.endsWith(kVdjStemsExtension, Qt::CaseInsensitive) ||
+            !vdjStemsSidecarPath(filePath).isEmpty()) {
         return {
                 StemInfo(QStringLiteral("Drums"), kStemDefaultColor[0]),
                 StemInfo(QStringLiteral("Bass"), kStemDefaultColor[1]),

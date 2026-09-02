@@ -15,6 +15,7 @@ extern "C" {
 #include <vector>
 
 #include "sources/soundsourceffmpeg.h"
+#include "track/steminfoimporter.h"
 #include "util/assert.h"
 #include "util/logger.h"
 #include "util/sample.h"
@@ -86,14 +87,26 @@ SoundSource::OpenResult SoundSourceSTEM::tryOpen(
     VERIFY_OR_DEBUG_ASSERT(!m_requestedChannelCount.isValid()) {
         return OpenResult::Failed;
     }
+
+    // dj-station: звук берём либо из самого файла, либо из стемов-спутника,
+    // если они лежат рядом с треком. Метки при этом читаются из исходного
+    // файла — его путь остаётся адресом источника.
+    QString stemFilePath = getLocalFileName();
+    const QString sidecar =
+            StemInfoImporter::vdjStemsSidecarPath(stemFilePath);
+    if (!sidecar.isEmpty()) {
+        stemFilePath = sidecar;
+    }
+    const QUrl stemUrl = QUrl::fromLocalFile(stemFilePath);
+
     // Open input. RAII handles cleanup on every return path.
     AVFormatContextPtr pavInputFormatContextGuard(
-            SoundSourceFFmpeg::openInputFile(getLocalFileName()));
+            SoundSourceFFmpeg::openInputFile(stemFilePath));
     AVFormatContext* pavInputFormatContext = pavInputFormatContextGuard.get();
     if (pavInputFormatContext == nullptr) {
         kLogger.warning()
                 << "Failed to open input file"
-                << getLocalFileName();
+                << stemFilePath;
         return OpenResult::Failed;
     }
 #if VERBOSE_DEBUG_LOG
@@ -122,7 +135,7 @@ SoundSource::OpenResult SoundSourceSTEM::tryOpen(
 
     // dj-station: формат определяем по расширению — внутри это два разных
     // контейнера, и раскладка дорожек у них своя.
-    const bool isVdjStems = getLocalFileName().endsWith(
+    const bool isVdjStems = stemFilePath.endsWith(
             kVdjStemsExtension, Qt::CaseInsensitive);
 
     uint selectedStemMask = params.stemMask();
@@ -253,7 +266,7 @@ SoundSource::OpenResult SoundSourceSTEM::tryOpen(
             continue;
         }
 
-        auto pPrimary = std::make_unique<SoundSourceFFmpeg>(getUrl(), slotPlan[slotIdx][0]);
+        auto pPrimary = std::make_unique<SoundSourceFFmpeg>(stemUrl,slotPlan[slotIdx][0]);
         if (pPrimary->open(OpenMode::Strict /*Unused*/, stemParam) != OpenResult::Succeeded) {
             return OpenResult::Failed;
         }
@@ -262,7 +275,7 @@ SoundSource::OpenResult SoundSourceSTEM::tryOpen(
         // Вторая дорожка слота, если она есть, звучит вместе с первой.
         std::unique_ptr<SoundSourceFFmpeg> pAux;
         if (slotPlan[slotIdx].size() > 1) {
-            pAux = std::make_unique<SoundSourceFFmpeg>(getUrl(), slotPlan[slotIdx][1]);
+            pAux = std::make_unique<SoundSourceFFmpeg>(stemUrl,slotPlan[slotIdx][1]);
             if (pAux->open(OpenMode::Strict /*Unused*/, stemParam) != OpenResult::Succeeded) {
                 return OpenResult::Failed;
             }

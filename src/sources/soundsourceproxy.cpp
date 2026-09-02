@@ -1,5 +1,7 @@
 #include "sources/soundsourceproxy.h"
 
+#include "track/steminfoimporter.h"
+
 #include <QMimeDatabase>
 #include <QMimeType>
 #include <QRegularExpression>
@@ -373,6 +375,21 @@ SoundSourceProxy::allProviderRegistrationsForUrl(
                 << url.toString();
         return {};
     }
+#ifdef __STEM__
+    // dj-station: если рядом с треком лежат стемы VirtualDJ, ставим стем-движок
+    // первым. Адрес источника при этом не меняется, поэтому метки читаются из
+    // самого трека, а в фонотеке не появляется второй записи.
+    if (!mixxx::StemInfoImporter::vdjStemsSidecarPath(url.toLocalFile())
+                    .isEmpty()) {
+        const auto stemRegistrations = allProviderRegistrationsForFileType(
+                QStringLiteral("vdjstems"));
+        if (!stemRegistrations.isEmpty()) {
+            return stemRegistrations +
+                    allProviderRegistrationsForFileType(fileType);
+        }
+    }
+#endif
+
     const auto providerRegistrations =
             allProviderRegistrationsForFileType(
                     fileType);

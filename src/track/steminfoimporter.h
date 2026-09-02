@@ -17,6 +17,13 @@ class StemInfoImporter {
 
     static bool hasStemAtom(
             const QString& aFileName);
+
+    /// dj-station: путь к стемам VirtualDJ, лежащим рядом с треком файлом
+    /// "<имя трека>.vdjstems", либо пустая строка. Так их раскладывает сам
+    /// VirtualDJ, и так же поступаем мы: трек остаётся в фонотеке одной
+    /// записью со своими метками, а стемы подхватываются сами.
+    static QString vdjStemsSidecarPath(
+            const QString& filePath);
 };
 
 } // namespace mixxx

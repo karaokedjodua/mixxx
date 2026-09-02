@@ -192,6 +192,49 @@ TEST_F(VdjStemsFixture, FileTypeIsSupported) {
     EXPECT_TRUE(SoundSourceProxy::isFileTypeSupported("vdjstems"));
 }
 
+// Стемы рядом с треком: в фонотеке остаётся одна запись — сам трек, со своими
+// метками, — но играют её стемы. Так раскладывает файлы VirtualDJ.
+TEST_F(VdjStemsFixture, SidecarTrackPlaysStemsKeepsTags) {
+    const QString trackPath =
+            qEnvironmentVariable("MIXXX_VDJSTEMS_SIDECAR_TRACK");
+    if (trackPath.isEmpty()) {
+        GTEST_SKIP() << "MIXXX_VDJSTEMS_SIDECAR_TRACK не задан";
+    }
+    ASSERT_FALSE(mixxx::StemInfoImporter::vdjStemsSidecarPath(trackPath).isEmpty())
+            << "рядом с треком нет файла стемов";
+
+    TrackPointer pTrack(Track::newTemporary(trackPath));
+
+    mixxx::AudioSource::OpenParams config;
+    config.setChannelCount(mixxx::audio::ChannelCount::stem());
+    const auto pAudioSource = SoundSourceProxy(pTrack).openAudioSource(config);
+    ASSERT_NE(pAudioSource, nullptr);
+
+    // Звук пришёл из стемов...
+    EXPECT_EQ(pAudioSource->getSignalInfo().getChannelCount(),
+            mixxx::audio::ChannelCount::stem());
+    EXPECT_EQ(pTrack->getStemInfo().size(), 4);
+
+    // ...а запись в фонотеке осталась самим треком: путь не подменён, и тип
+    // файла прежний, то есть метки по-прежнему читаются из него, а не из
+    // Matroska, где их нет вовсе.
+    EXPECT_EQ(QFileInfo(pTrack->getLocation()).absoluteFilePath(),
+            QFileInfo(trackPath).absoluteFilePath());
+    EXPECT_EQ(mixxx::SoundSource::getTypeFromFile(QFileInfo(trackPath)),
+            QStringLiteral("mp3"));
+
+    // Длительность взята у стемов, а не у короткого тестового mp3 —
+    // значит играет действительно файл-спутник.
+    SoundSourceSTEM stemsOnly(
+            QUrl::fromLocalFile(
+                    mixxx::StemInfoImporter::vdjStemsSidecarPath(trackPath)));
+    mixxx::AudioSource::OpenParams stemsConfig;
+    stemsConfig.setChannelCount(mixxx::audio::ChannelCount::stem());
+    ASSERT_EQ(stemsOnly.open(AudioSource::OpenMode::Strict, stemsConfig),
+            AudioSource::OpenResult::Succeeded);
+    EXPECT_EQ(pAudioSource->frameIndexRange(), stemsOnly.frameIndexRange());
+}
+
 TEST_F(VdjStemsFixture, ImporterRecognisesFile) {
     if (skipWithoutSample()) {
         GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
