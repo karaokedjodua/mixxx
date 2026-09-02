@@ -24,6 +24,11 @@ class StemInfoImporter {
     /// записью со своими метками, а стемы подхватываются сами.
     static QString vdjStemsSidecarPath(
             const QString& filePath);
+
+    /// dj-station: правда ли, что этот файл — стемы при каком-то треке,
+    /// лежащем рядом. Такие файлы не попадают в фонотеку отдельной записью.
+    static bool isVdjStemsSidecarOf(
+            const QString& filePath);
 };
 
 } // namespace mixxx

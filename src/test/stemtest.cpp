@@ -235,6 +235,23 @@ TEST_F(VdjStemsFixture, SidecarTrackPlaysStemsKeepsTags) {
     EXPECT_EQ(pAudioSource->frameIndexRange(), stemsOnly.frameIndexRange());
 }
 
+// Спутник не должен появляться в фонотеке вторым треком, но отдельно лежащий
+// файл стемов — вполне себе трек.
+TEST_F(VdjStemsFixture, SidecarIsNotALibraryTrackButStandaloneIs) {
+    const QString trackPath =
+            qEnvironmentVariable("MIXXX_VDJSTEMS_SIDECAR_TRACK");
+    if (trackPath.isEmpty() || skipWithoutSample()) {
+        GTEST_SKIP() << "не заданы MIXXX_VDJSTEMS_SIDECAR_TRACK и MIXXX_VDJSTEMS_TEST_FILE";
+    }
+    const QString sidecar =
+            mixxx::StemInfoImporter::vdjStemsSidecarPath(trackPath);
+    ASSERT_FALSE(sidecar.isEmpty());
+
+    EXPECT_FALSE(SoundSourceProxy::isFileSupported(mixxx::FileInfo(sidecar)));
+    EXPECT_TRUE(SoundSourceProxy::isFileSupported(mixxx::FileInfo(trackPath)));
+    EXPECT_TRUE(SoundSourceProxy::isFileSupported(mixxx::FileInfo(m_filePath)));
+}
+
 TEST_F(VdjStemsFixture, ImporterRecognisesFile) {
     if (skipWithoutSample()) {
         GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";

@@ -303,6 +303,14 @@ bool SoundSourceProxy::isUrlSupported(const QUrl& url) {
 
 // static
 bool SoundSourceProxy::isFileSupported(const mixxx::FileInfo& fileInfo) {
+#ifdef __STEM__
+    // dj-station: стемы, лежащие рядом с треком, самостоятельной записью в
+    // фонотеке не являются — иначе рядом с каждым треком появился бы его
+    // двойник без меток. Открыть такой файл напрямую по-прежнему можно.
+    if (mixxx::StemInfoImporter::isVdjStemsSidecarOf(fileInfo.location())) {
+        return false;
+    }
+#endif
     const QString fileType =
             mixxx::SoundSource::getTypeFromFile(fileInfo.asQFileInfo());
     // qDebug() << "isFileSupported" << fileType;

@@ -125,6 +125,16 @@ QString StemInfoImporter::vdjStemsSidecarPath(const QString& filePath) {
 }
 
 // static
+bool StemInfoImporter::isVdjStemsSidecarOf(const QString& filePath) {
+    if (!filePath.endsWith(kVdjStemsExtension, Qt::CaseInsensitive)) {
+        return false;
+    }
+    const QString track =
+            filePath.chopped(kVdjStemsExtension.size());
+    return !track.isEmpty() && QFile::exists(track);
+}
+
+// static
 bool StemInfoImporter::maybeStemFile(
         const QString& fileName, QMimeType mimeType) {
     // dj-station: .vdjstems опознаём по расширению. Определять по MIME нельзя —
