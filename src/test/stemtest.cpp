@@ -170,19 +170,32 @@ INSTANTIATE_TEST_SUITE_P(
 // dj-station: чтение стемов VirtualDJ. Путь к файлу берём из переменной
 // окружения MIXXX_VDJSTEMS_TEST_FILE — держать в репозитории десятки мегабайт
 // ради одного теста незачем, а свободно распространяемого образца у нас нет.
+const QString kVdjStemsFixture = QStringLiteral("stems/sin.vdjstems");
+const QString kVdjStemsSidecarTrack = QStringLiteral("stems/sidecar/track.wav");
+
 class VdjStemsFixture : public MixxxTest {
   protected:
     void SetUp() override {
         ASSERT_TRUE(SoundSourceProxy::isFileTypeSupported("vdjstems") ||
                 SoundSourceProxy::registerProviders());
+        // Образец лежит в дереве тестов и собран из тех же дорожек, что и
+        // файлы Native Instruments рядом. Переменная окружения оставлена как
+        // переопределение, чтобы прогнать проверку на настоящем треке, но
+        // пропускать тест без неё нельзя: молча пропущенный тест — это ложная
+        // зелень, он выглядит пройденным, ничего не проверив.
         m_filePath = qEnvironmentVariable("MIXXX_VDJSTEMS_TEST_FILE");
+        if (m_filePath.isEmpty()) {
+            m_filePath = getTestDir().filePath(kVdjStemsFixture);
+        }
+        ASSERT_TRUE(QFileInfo::exists(m_filePath)) << m_filePath.toStdString();
     }
 
-    bool skipWithoutSample() {
-        if (m_filePath.isEmpty()) {
-            return true;
-        }
-        return false;
+    QString sidecarTrackPath() const {
+        const QString fromEnv =
+                qEnvironmentVariable("MIXXX_VDJSTEMS_SIDECAR_TRACK");
+        return fromEnv.isEmpty()
+                ? getTestDir().filePath(kVdjStemsSidecarTrack)
+                : fromEnv;
     }
 
     QString m_filePath;
@@ -195,11 +208,8 @@ TEST_F(VdjStemsFixture, FileTypeIsSupported) {
 // Стемы рядом с треком: в фонотеке остаётся одна запись — сам трек, со своими
 // метками, — но играют её стемы. Так раскладывает файлы VirtualDJ.
 TEST_F(VdjStemsFixture, SidecarTrackPlaysStemsKeepsTags) {
-    const QString trackPath =
-            qEnvironmentVariable("MIXXX_VDJSTEMS_SIDECAR_TRACK");
-    if (trackPath.isEmpty()) {
-        GTEST_SKIP() << "MIXXX_VDJSTEMS_SIDECAR_TRACK не задан";
-    }
+    const QString trackPath = sidecarTrackPath();
+    ASSERT_TRUE(QFileInfo::exists(trackPath)) << trackPath.toStdString();
     ASSERT_FALSE(mixxx::StemInfoImporter::vdjStemsSidecarPath(trackPath).isEmpty())
             << "рядом с треком нет файла стемов";
 
@@ -220,8 +230,11 @@ TEST_F(VdjStemsFixture, SidecarTrackPlaysStemsKeepsTags) {
     // Matroska, где их нет вовсе.
     EXPECT_EQ(QFileInfo(pTrack->getLocation()).absoluteFilePath(),
             QFileInfo(trackPath).absoluteFilePath());
-    EXPECT_EQ(mixxx::SoundSource::getTypeFromFile(QFileInfo(trackPath)),
-            QStringLiteral("mp3"));
+    const QString trackType =
+            mixxx::SoundSource::getTypeFromFile(QFileInfo(trackPath));
+    EXPECT_NE(trackType, QStringLiteral("vdjstems"))
+            << "тип подменён на стемовый, метки читать будет нечем";
+    EXPECT_EQ(trackType, QFileInfo(trackPath).suffix().toLower());
 
     // Длительность взята у стемов, а не у короткого тестового mp3 —
     // значит играет действительно файл-спутник.
@@ -238,11 +251,8 @@ TEST_F(VdjStemsFixture, SidecarTrackPlaysStemsKeepsTags) {
 // Спутник не должен появляться в фонотеке вторым треком, но отдельно лежащий
 // файл стемов — вполне себе трек.
 TEST_F(VdjStemsFixture, SidecarIsNotALibraryTrackButStandaloneIs) {
-    const QString trackPath =
-            qEnvironmentVariable("MIXXX_VDJSTEMS_SIDECAR_TRACK");
-    if (trackPath.isEmpty() || skipWithoutSample()) {
-        GTEST_SKIP() << "не заданы MIXXX_VDJSTEMS_SIDECAR_TRACK и MIXXX_VDJSTEMS_TEST_FILE";
-    }
+    const QString trackPath = sidecarTrackPath();
+    ASSERT_TRUE(QFileInfo::exists(trackPath)) << trackPath.toStdString();
     const QString sidecar =
             mixxx::StemInfoImporter::vdjStemsSidecarPath(trackPath);
     ASSERT_FALSE(sidecar.isEmpty());
@@ -253,9 +263,6 @@ TEST_F(VdjStemsFixture, SidecarIsNotALibraryTrackButStandaloneIs) {
 }
 
 TEST_F(VdjStemsFixture, ImporterRecognisesFile) {
-    if (skipWithoutSample()) {
-        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
-    }
     EXPECT_TRUE(mixxx::StemInfoImporter::maybeStemFile(m_filePath));
     EXPECT_EQ(mixxx::StemInfoImporter::importStemInfos(m_filePath).size(), 4);
 
@@ -265,9 +272,6 @@ TEST_F(VdjStemsFixture, ImporterRecognisesFile) {
 }
 
 TEST_F(VdjStemsFixture, StemInfoIsSynthesised) {
-    if (skipWithoutSample()) {
-        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
-    }
     TrackPointer pTrack(Track::newTemporary(m_filePath));
 
     mixxx::AudioSource::OpenParams config;
@@ -283,9 +287,6 @@ TEST_F(VdjStemsFixture, StemInfoIsSynthesised) {
 }
 
 TEST_F(VdjStemsFixture, OpensAsFourStems) {
-    if (skipWithoutSample()) {
-        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
-    }
     SoundSourceSTEM sourceStem(QUrl::fromLocalFile(m_filePath));
 
     mixxx::AudioSource::OpenParams config;
@@ -301,9 +302,6 @@ TEST_F(VdjStemsFixture, OpensAsFourStems) {
 // Каждый из четырёх стемов должен звучать и отличаться от остальных. Если бы
 // сложение дорожек ломалось, ударные оказались бы тишиной или копией соседа.
 TEST_F(VdjStemsFixture, EveryStemDecodesDistinctAudio) {
-    if (skipWithoutSample()) {
-        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
-    }
     SoundSourceSTEM sourceStem(QUrl::fromLocalFile(m_filePath));
 
     mixxx::AudioSource::OpenParams config;
