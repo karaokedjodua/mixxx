@@ -6,6 +6,8 @@
 #include <QJsonDocument>
 #include <QJsonValue>
 
+#include <algorithm>
+
 #include "control/control.h"
 #include "control/controlobject.h"
 #include "control/controlproxy.h"
@@ -16,7 +18,11 @@
 #include "network/remoteapihttp.h"
 #include "preferences/configobject.h"
 #include "soundio/soundmanager.h"
+#include "track/beats.h"
+#include "track/bpm.h"
+#include "track/cue.h"
 #include "track/track.h"
+#include "track/trackref.h"
 #include "util/logger.h"
 
 namespace mixxx {
@@ -198,6 +204,19 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
         return;
     }
 
+    if (resource == "library") {
+        if (parts.size() >= 4 && parts[3] == "analysis") {
+            if (method != "POST") {
+                replyError(pReply, 405, QStringLiteral("POST required"));
+                return;
+            }
+            handleLibraryAnalysis(body, pReply);
+            return;
+        }
+        replyError(pReply, 404, QStringLiteral("unknown library call"));
+        return;
+    }
+
     replyError(pReply, 404, QStringLiteral("unknown resource"));
 }
 
@@ -360,6 +379,109 @@ void RemoteApiHandler::handleControlsList(RemoteApiReply* pReply) {
     QJsonObject o;
     o.insert(QStringLiteral("controls"), arr);
     reply(pReply, 200, o);
+}
+
+void RemoteApiHandler::handleLibraryAnalysis(const QByteArray& body, RemoteApiReply* pReply) {
+    if (!m_pTrackCollectionManager) {
+        replyError(pReply, 503, QStringLiteral("no library"));
+        return;
+    }
+    const QJsonObject o = QJsonDocument::fromJson(body).object();
+
+    TrackPointer pTrack;
+    const QString path = o.value(QStringLiteral("path")).toString();
+    if (!path.isEmpty()) {
+        pTrack = m_pTrackCollectionManager->getOrAddTrack(TrackRef::fromFilePath(path));
+    } else {
+        const QJsonValue idValue = o.value(QStringLiteral("track_id"));
+        if (!idValue.isUndefined() && !idValue.isNull()) {
+            pTrack = m_pTrackCollectionManager->getTrackById(TrackId(idValue.toVariant()));
+        }
+    }
+    if (!pTrack) {
+        replyError(pReply, 404, QStringLiteral("no such track"));
+        return;
+    }
+
+    // Позиции внутри Mixxx — в кадрах, а снаружи приходят секунды: нужна
+    // частота дискретизации. Она известна после сканирования меток файла.
+    const mixxx::audio::SampleRate sampleRate = pTrack->getSampleRate();
+    const double rate = sampleRate.isValid() ? static_cast<double>(sampleRate) : 0.0;
+
+    QJsonObject result;
+    result.insert(QStringLiteral("track"), trackJson(pTrack));
+
+    if (o.contains(QStringLiteral("bpm"))) {
+        const double bpmValue = o.value(QStringLiteral("bpm")).toDouble();
+        const mixxx::Bpm bpm(bpmValue);
+        if (!bpm.isValid() || bpmValue > mixxx::Bpm::kValueMax) {
+            replyError(pReply, 400, QStringLiteral("bad bpm"));
+            return;
+        }
+        if (rate <= 0.0) {
+            replyError(pReply, 409, QStringLiteral("sample rate unknown yet"));
+            return;
+        }
+        const double anchorSec = o.value(QStringLiteral("beat_anchor_sec")).toDouble(0.0);
+        const mixxx::audio::FramePos anchor(std::max(0.0, anchorSec) * rate);
+        const auto pBeats = mixxx::Beats::fromConstTempo(
+                sampleRate, anchor, bpm, QStringLiteral("vdj-import"));
+        result.insert(QStringLiteral("beats_set"), pTrack->trySetBeats(pBeats));
+        result.insert(QStringLiteral("bpm"), pTrack->getBpm());
+    }
+
+    if (o.contains(QStringLiteral("key"))) {
+        const QString key = o.value(QStringLiteral("key")).toString();
+        if (!key.isEmpty()) {
+            pTrack->setKeyText(key, mixxx::track::io::key::USER);
+        }
+        result.insert(QStringLiteral("key"), pTrack->getKeyText());
+    }
+
+    if (o.contains(QStringLiteral("cues"))) {
+        if (rate <= 0.0) {
+            replyError(pReply, 409, QStringLiteral("sample rate unknown yet"));
+            return;
+        }
+        if (o.value(QStringLiteral("replace_cues")).toBool(false)) {
+            pTrack->removeCuesOfType(mixxx::CueType::HotCue);
+        }
+        int written = 0;
+        const QJsonArray cues = o.value(QStringLiteral("cues")).toArray();
+        for (const QJsonValue& v : cues) {
+            const QJsonObject c = v.toObject();
+            // У VirtualDJ метки нумеруются с единицы, у Mixxx — с нуля.
+            const int hotcue = c.value(QStringLiteral("num")).toInt(0) - 1;
+            const double posSec = c.value(QStringLiteral("pos_sec")).toDouble(-1.0);
+            if (hotcue < 0 || hotcue >= 64 || posSec < 0.0) {
+                continue;
+            }
+            const mixxx::audio::FramePos start(posSec * rate);
+            CuePointer pCue;
+            const QList<CuePointer> existing = pTrack->getCuePoints();
+            for (const CuePointer& pExisting : existing) {
+                if (pExisting->getHotCue() == hotcue) {
+                    pCue = pExisting;
+                    break;
+                }
+            }
+            if (pCue) {
+                pCue->setStartAndEndPosition(start, mixxx::audio::kInvalidFramePos);
+            } else {
+                pCue = pTrack->createAndAddCue(
+                        mixxx::CueType::HotCue, hotcue, start, mixxx::audio::kInvalidFramePos);
+            }
+            const QString label = c.value(QStringLiteral("name")).toString();
+            if (!label.isEmpty()) {
+                pCue->setLabel(label);
+            }
+            written++;
+        }
+        result.insert(QStringLiteral("cues_written"), written);
+    }
+
+    m_pTrackCollectionManager->saveTrack(pTrack);
+    reply(pReply, 200, result);
 }
 
 void RemoteApiHandler::subscribeNow(const QStringList& keys) {

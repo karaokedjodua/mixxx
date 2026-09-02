@@ -29,6 +29,7 @@
 #include "sources/soundsourceproxy.h"
 #include "test/mixxxdbtest.h"
 #include "test/soundsourceproviderregistration.h"
+#include "track/cue.h"
 #include "track/track.h"
 #ifdef __RUBBERBAND__
 #include "engine/bufferscalers/rubberbandworkerpool.h"
@@ -300,6 +301,69 @@ TEST_F(RemoteApiTest, LoopbackWithoutTokenIsAllowed) {
     EXPECT_TRUE(resp.startsWith("HTTP/1.1 200")) << resp.left(80).toStdString();
     EXPECT_TRUE(resp.contains("[Channel1]"));
     server.stop();
+}
+
+// dj-station: разбор извне — BPM с якорем сетки, тональность, горячие метки.
+// Так на станцию попадают данные VirtualDJ без пересчёта на планшете.
+TEST_F(RemoteApiTest, LibraryAnalysisImport) {
+    const QString location = getTestDir().filePath(kTrackLocation);
+    // Частота дискретизации известна после загрузки — грузим один раз.
+    const QByteArray loadBody = QJsonDocument(QJsonObject{{"path", location}}).toJson();
+    ASSERT_EQ(call("POST", "/api/decks/1/load", "", loadBody)->status, 202);
+    Deck* pDeck = m_pPlayerManager->getDeck(0);
+    ASSERT_TRUE(waitUntil([&]() {
+        return pDeck->getEngineDeck()->getEngineBuffer()->isTrackLoaded() &&
+                pDeck->getLoadedTrack() != nullptr;
+    }));
+
+    QJsonObject body;
+    body.insert("path", location);
+    body.insert("bpm", 128.0);
+    body.insert("beat_anchor_sec", 0.5);
+    body.insert("key", "Am");
+    body.insert("cues",
+            QJsonArray{QJsonObject{{"num", 1}, {"pos_sec", 1.0}, {"name", "drop"}},
+                    QJsonObject{{"num", 3}, {"pos_sec", 2.0}}});
+    auto r = call("POST", "/api/library/analysis", "", QJsonDocument(body).toJson());
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    const QJsonObject res = bodyJson(*r);
+    EXPECT_TRUE(res.value("beats_set").toBool());
+    EXPECT_EQ(res.value("cues_written").toInt(), 2);
+
+    TrackPointer pTrack = pDeck->getLoadedTrack();
+    ASSERT_NE(pTrack, nullptr);
+    EXPECT_NEAR(pTrack->getBpm(), 128.0, 0.05);
+    EXPECT_FALSE(pTrack->getKeyText().isEmpty());
+    int hotcues = 0;
+    bool labelled = false;
+    for (const CuePointer& pCue : pTrack->getCuePoints()) {
+        if (pCue->getType() == mixxx::CueType::HotCue) {
+            hotcues++;
+            if (pCue->getLabel() == QStringLiteral("drop")) {
+                labelled = true;
+            }
+        }
+    }
+    EXPECT_EQ(hotcues, 2);
+    EXPECT_TRUE(labelled);
+
+    // Повтор с теми же номерами не плодит дубли, а двигает метки.
+    body.insert("cues", QJsonArray{QJsonObject{{"num", 1}, {"pos_sec", 1.5}}});
+    ASSERT_EQ(call("POST", "/api/library/analysis", "", QJsonDocument(body).toJson())->status, 200);
+    hotcues = 0;
+    for (const CuePointer& pCue : pTrack->getCuePoints()) {
+        if (pCue->getType() == mixxx::CueType::HotCue) {
+            hotcues++;
+        }
+    }
+    EXPECT_EQ(hotcues, 2);
+
+    EXPECT_EQ(call("POST", "/api/library/analysis", "", "{\"track_id\":987654321,\"bpm\":120}")->status, 404);
+    EXPECT_EQ(call("POST", "/api/library/analysis", "",
+                      QJsonDocument(QJsonObject{{"path", location}, {"bpm", 9999.0}}).toJson())
+                      ->status,
+            400);
+    EXPECT_EQ(call("GET", "/api/library/analysis")->status, 405);
 }
 
 TEST_F(RemoteApiTest, RefusesLanBindWithoutToken) {

@@ -85,6 +85,10 @@ class RemoteApiHandler : public QObject {
             RemoteApiReply* pReply);
     void handleControlsBatch(const QByteArray& body, RemoteApiReply* pReply);
     void handleControlsList(RemoteApiReply* pReply);
+    /// dj-station: записать в трек готовый разбор извне — BPM с якорем
+    /// сетки, тональность, горячие метки. Так на станцию попадают данные
+    /// VirtualDJ без пересчёта на слабом планшете.
+    void handleLibraryAnalysis(const QByteArray& body, RemoteApiReply* pReply);
 
     PlayerManager* m_pPlayerManager;
     TrackCollectionManager* m_pTrackCollectionManager;
