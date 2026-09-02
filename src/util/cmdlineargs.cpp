@@ -52,6 +52,7 @@ CmdlineArgs::CmdlineArgs()
           m_startAutoDJ(false),
           m_rescanLibrary(false),
           m_controllerDebug(false),
+          m_remoteApiPort(0),
           m_controllerAbortOnWarning(false),
           m_developer(false),
 #ifdef MIXXX_USE_QML
@@ -261,6 +262,28 @@ bool CmdlineArgs::parse(const QStringList& arguments, CmdlineArgs::ParseMode mod
     parser.addOption(controllerDebug);
     parser.addOption(controllerDebugDeprecated);
 
+    // dj-station: сетевое управление станцией
+    const QCommandLineOption remoteApiPort(QStringLiteral("remote-api-port"),
+            forUserFeedback ? QCoreApplication::translate("CmdlineArgs",
+                                      "Enables the remote control API on this TCP port "
+                                      "(bound to 127.0.0.1 unless --remote-api-bind is given)")
+                            : QString(),
+            QStringLiteral("port"));
+    const QCommandLineOption remoteApiBind(QStringLiteral("remote-api-bind"),
+            forUserFeedback ? QCoreApplication::translate("CmdlineArgs",
+                                      "Address for the remote control API to listen on; "
+                                      "anything but loopback requires --remote-api-token")
+                            : QString(),
+            QStringLiteral("address"));
+    const QCommandLineOption remoteApiToken(QStringLiteral("remote-api-token"),
+            forUserFeedback ? QCoreApplication::translate("CmdlineArgs",
+                                      "Token clients must present to the remote control API")
+                            : QString(),
+            QStringLiteral("token"));
+    parser.addOption(remoteApiPort);
+    parser.addOption(remoteApiBind);
+    parser.addOption(remoteApiToken);
+
     const QCommandLineOption controllerAbortOnWarning(
             QStringLiteral("controller-abort-on-warning"),
             forUserFeedback ? QCoreApplication::translate("CmdlineArgs",
@@ -456,6 +479,9 @@ bool CmdlineArgs::parse(const QStringList& arguments, CmdlineArgs::ParseMode mod
     m_controllerDebug = parser.isSet(controllerDebug) || parser.isSet(controllerDebugDeprecated);
     m_controllerPreviewScreens = parser.isSet(controllerPreviewScreens);
     m_controllerAbortOnWarning = parser.isSet(controllerAbortOnWarning);
+    m_remoteApiPort = parser.value(remoteApiPort).toInt();
+    m_remoteApiBind = parser.value(remoteApiBind);
+    m_remoteApiToken = parser.value(remoteApiToken);
     m_developer = parser.isSet(developer);
 #ifdef MIXXX_USE_QML
     m_qml = parser.isSet(qml);

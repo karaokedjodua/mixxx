@@ -1,5 +1,8 @@
 #include "coreservices.h"
 
+#include "network/remoteapihandler.h"
+#include "network/remoteapiserver.h"
+
 #include <QApplication>
 #include <QFileDialog>
 #include <QProcess>
@@ -752,6 +755,46 @@ void CoreServices::initialize(QApplication* pApp) {
         }
     }
 
+    // dj-station: сетевое управление станцией. Выключено по умолчанию;
+    // включается ключом [RemoteApi] Enabled или флагом --remote-api-port.
+    // Стартует здесь, когда PlayerManager, Library и все ControlObject уже
+    // созданы.
+    {
+        UserSettingsPointer pApiSettings = getSettings();
+        bool apiEnabled = pApiSettings->getValue(
+                ConfigKey(QStringLiteral("[RemoteApi]"), QStringLiteral("Enabled")), false);
+        mixxx::RemoteApiSettings apiSettings;
+        apiSettings.port = static_cast<quint16>(pApiSettings->getValue(
+                ConfigKey(QStringLiteral("[RemoteApi]"), QStringLiteral("Port")), 8901));
+        apiSettings.bind = pApiSettings->getValue(
+                ConfigKey(QStringLiteral("[RemoteApi]"), QStringLiteral("Bind")),
+                QStringLiteral("127.0.0.1"));
+        apiSettings.token = pApiSettings->getValue(
+                ConfigKey(QStringLiteral("[RemoteApi]"), QStringLiteral("Token")), QString())
+                                    .toUtf8();
+        if (m_cmdlineArgs.getRemoteApiPort() > 0) {
+            apiEnabled = true;
+            apiSettings.port = static_cast<quint16>(m_cmdlineArgs.getRemoteApiPort());
+        }
+        if (!m_cmdlineArgs.getRemoteApiBind().isEmpty()) {
+            apiSettings.bind = m_cmdlineArgs.getRemoteApiBind();
+        }
+        if (!m_cmdlineArgs.getRemoteApiToken().isEmpty()) {
+            apiSettings.token = m_cmdlineArgs.getRemoteApiToken().toUtf8();
+        }
+        if (apiEnabled) {
+            m_pRemoteApiHandler = std::make_shared<mixxx::RemoteApiHandler>(
+                    m_pPlayerManager.get(), m_pTrackCollectionManager.get());
+            m_pRemoteApiServer = std::make_shared<mixxx::RemoteApiServer>(
+                    m_pRemoteApiHandler.get(), apiSettings);
+            if (!m_pRemoteApiServer->start()) {
+                qWarning() << "RemoteApi: not started, settings are unsafe";
+                m_pRemoteApiServer.reset();
+                m_pRemoteApiHandler.reset();
+            }
+        }
+    }
+
     m_isInitialized = true;
 
 #ifdef MIXXX_USE_QML
@@ -905,6 +948,15 @@ void CoreServices::finalize() {
         qDebug() << "Skipping CoreServices finalization because it was never initialized.";
         return;
     }
+
+    // dj-station: сетевое управление останавливаем первым — до удаления
+    // PlayerManager и Library, иначе живое соединение разыменует висячие
+    // указатели.
+    if (m_pRemoteApiServer) {
+        m_pRemoteApiServer->stop();
+        m_pRemoteApiServer.reset();
+    }
+    m_pRemoteApiHandler.reset();
 
     Timer t("CoreServices::~CoreServices");
     t.start();

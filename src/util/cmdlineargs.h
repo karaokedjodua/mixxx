@@ -39,6 +39,16 @@ class CmdlineArgs final {
     bool getControllerDebug() const {
         return m_controllerDebug;
     }
+    // dj-station: сетевое управление станцией
+    int getRemoteApiPort() const {
+        return m_remoteApiPort;
+    }
+    const QString& getRemoteApiBind() const {
+        return m_remoteApiBind;
+    }
+    const QString& getRemoteApiToken() const {
+        return m_remoteApiToken;
+    }
     bool getControllerPreviewScreens() const {
         return m_controllerPreviewScreens;
     }
@@ -101,6 +111,9 @@ class CmdlineArgs final {
     bool m_startAutoDJ;
     bool m_rescanLibrary;
     bool m_controllerDebug;
+    int m_remoteApiPort;
+    QString m_remoteApiBind;
+    QString m_remoteApiToken;
     bool m_controllerPreviewScreens;
     bool m_controllerAbortOnWarning; // Controller Engine will be stricter
     bool m_developer; // Developer Mode
