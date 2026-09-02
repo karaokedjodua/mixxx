@@ -1526,6 +1526,20 @@ bool WOverview::drawNextPixmapPart() {
                 stemInfo,
                 stemGain);
         drawnAsStem = true;
+    } else if (pWaveform->hasStem()) {
+        // Стемовая волна, но рисуем по-старому — пишем причину один раз на
+        // трек, чтобы это было видно в журнале, а не искалось часами.
+        static QString lastReported;
+        const QString key = m_group + QChar('|') +
+                (m_pCurrentTrack ? m_pCurrentTrack->getLocation() : QString());
+        if (lastReported != key) {
+            lastReported = key;
+            qInfo() << "WOverview" << m_group
+                    << "stem waveform drawn without stems:"
+                    << "stemInfo" << stemInfo.size()
+                    << "proxies" << m_pStemGain.size()
+                    << "summaryHasStemData" << waveformHasStemData(pWaveform);
+        }
     }
 #endif
 
@@ -1571,14 +1585,16 @@ void WOverview::slotStemGainChanged(double v) {
     if (!m_pWaveform || !m_pWaveform->hasStem()) {
         return;
     }
-    // Склеиваем всплеск изменений в одну перерисовку.
-    if (!m_stemRedrawTimer.isActive()) {
-        m_stemRedrawTimer.start();
-    }
+    // Перерисовываем не во время движения ручки, а когда оно замерло:
+    // каждый новый сигнал откладывает срабатывание. Пока ручка крутится,
+    // живую картину даёт верхняя волна; полоса догоняет, как только ручку
+    // отпустили. Так интерфейс не дёргается.
+    m_stemRedrawTimer.start();
 }
 
 void WOverview::slotRebuildStemOverview() {
     if (!m_pWaveform || !m_pWaveform->hasStem()) {
+        qInfo() << "WOverview" << m_group << "stem gain changed but no stem summary";
         return;
     }
     // Полоса хранится готовой картинкой и достраивается по мере анализа.

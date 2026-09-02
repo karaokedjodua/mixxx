@@ -1,6 +1,8 @@
 #include "waveformoverviewrenderer.h"
 
+#include <QLine>
 #include <QPainter>
+#include <QVector>
 
 #include <algorithm>
 
@@ -345,56 +347,65 @@ void drawWaveformPartStem(
     const int stemCount = std::min({static_cast<int>(stemInfo.size()),
             static_cast<int>(stemGain.size()),
             mixxx::kMaxSupportedStems});
-    if (stemCount <= 0) {
+    if (stemCount <= 0 || end <= startVal) {
         if (start) {
             *start = end;
         }
         return;
     }
 
-    QColor colors[mixxx::kMaxSupportedStems];
+    const WaveformData* pData = pWaveform->data();
+
+    // Порядок слоёв выбираем один раз на весь отрезок по средней громкости:
+    // громкие дорожки вниз, тихие поверх, иначе самая громкая закрыла бы
+    // остальные. Считать порядок в каждом столбце было бы точнее, но тогда
+    // перо приходится менять на каждую линию — это пятнадцать тысяч смен на
+    // перерисовку, и станция от этого дёргалась.
+    double sum[mixxx::kMaxSupportedStems] = {};
+    for (int i = startVal; i < end; i++) {
+        for (int stemIdx = 0; stemIdx < stemCount; stemIdx++) {
+            sum[stemIdx] += pData[i].stems[stemIdx];
+        }
+    }
+    int order[mixxx::kMaxSupportedStems];
     for (int stemIdx = 0; stemIdx < stemCount; stemIdx++) {
-        colors[stemIdx] = stemInfo[stemIdx].getColor();
+        order[stemIdx] = stemIdx;
+    }
+    for (int a = 1; a < stemCount; a++) {
+        const int key = order[a];
+        int b = a - 1;
+        while (b >= 0 && sum[order[b]] < sum[key]) {
+            order[b + 1] = order[b];
+            b--;
+        }
+        order[b + 1] = key;
     }
 
-    const WaveformData* pData = pWaveform->data();
-    float value[mixxx::kMaxSupportedStems];
-    int order[mixxx::kMaxSupportedStems];
-
-    for (int i = startVal, x = startVal / 2; i < end; i += 2, ++x) {
-        // Слева рисуем вверх, справа вниз — так же, как остальные обзоры.
-        for (int channel = 0; channel < ChannelIndex::ChannelCount; channel++) {
-            const WaveformData& datum = pData[i + channel];
-            for (int stemIdx = 0; stemIdx < stemCount; stemIdx++) {
-                value[stemIdx] = static_cast<float>(datum.stems[stemIdx]) *
-                        stemGain[stemIdx];
-                order[stemIdx] = stemIdx;
+    // Одна дорожка — одно перо и одна пачка линий: слева вверх, справа вниз.
+    QVector<QLine> lines;
+    lines.reserve((end - startVal));
+    for (int k = 0; k < stemCount; k++) {
+        const int stemIdx = order[k];
+        const float gain = stemGain[stemIdx];
+        if (gain <= 0.f) {
+            continue;
+        }
+        lines.clear();
+        for (int i = startVal, x = startVal / 2; i < end; i += 2, ++x) {
+            const int up = static_cast<int>(pData[i].stems[stemIdx] * gain);
+            if (up > 0) {
+                lines.append(QLine(x, 0, x, -up));
             }
-
-            // Громкие дорожки уходят вниз слоя, тихие рисуются поверх, иначе
-            // высокая дорожка закрыла бы собой все остальные. Дорожек всего
-            // четыре, поэтому простая сортировка вставками здесь уместна.
-            for (int a = 1; a < stemCount; a++) {
-                const int key = order[a];
-                int b = a - 1;
-                while (b >= 0 && value[order[b]] < value[key]) {
-                    order[b + 1] = order[b];
-                    b--;
-                }
-                order[b + 1] = key;
-            }
-
-            const int sign = (channel == ChannelIndex::Left) ? -1 : 1;
-            for (int k = 0; k < stemCount; k++) {
-                const int stemIdx = order[k];
-                const int height = static_cast<int>(value[stemIdx]);
-                if (height <= 0) {
-                    continue;
-                }
-                pPainter->setPen(colors[stemIdx]);
-                pPainter->drawLine(x, 0, x, sign * height);
+            const int down = static_cast<int>(pData[i + 1].stems[stemIdx] * gain);
+            if (down > 0) {
+                lines.append(QLine(x, 0, x, down));
             }
         }
+        if (lines.isEmpty()) {
+            continue;
+        }
+        pPainter->setPen(stemInfo[stemIdx].getColor());
+        pPainter->drawLines(lines.constData(), lines.size());
     }
 
     if (start) {
