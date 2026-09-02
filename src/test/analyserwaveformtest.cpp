@@ -130,4 +130,38 @@ TEST_F(AnalyzerWaveformTest, canary) {
     EXPECT_DOUBLE_EQ(pWaveformSummary->getAudioVisualRatio(), 1.0);
 }
 
+#ifdef __STEM__
+// dj-station: сводная волна обязана хранить дорожки отдельно — на ней рисуется
+// полоса обзора под декой. Раньше averageStore() их не записывала, полоса
+// получала нули и оставалась пустой, хотя число дорожек было проставлено верно.
+TEST(WaveformStrideStemTest, SummaryKeepsStemData) {
+    constexpr int kStemCount = 4;
+    WaveformStride stride(2.0, 4.0, kStemCount);
+
+    // Один шаг разбора: у каждой дорожки свой уровень, по возрастанию.
+    for (int channel = 0; channel < 2; channel++) {
+        stride.m_overallData[channel] = 0.5f;
+        for (int stemIdx = 0; stemIdx < kStemCount; stemIdx++) {
+            stride.m_stemData[channel][stemIdx] = 0.1f * (stemIdx + 1);
+        }
+    }
+
+    WaveformData detailed[2] = {};
+    stride.store(detailed);
+    // Подробная волна дорожки сохраняла и раньше.
+    EXPECT_GT(detailed[0].stems[0], 0);
+
+    WaveformData summary[2] = {};
+    stride.averageStore(summary);
+    for (int stemIdx = 0; stemIdx < kStemCount; stemIdx++) {
+        EXPECT_GT(summary[0].stems[stemIdx], 0)
+                << "дорожка " << stemIdx << " потерялась в сводной волне слева";
+        EXPECT_GT(summary[1].stems[stemIdx], 0)
+                << "дорожка " << stemIdx << " потерялась в сводной волне справа";
+    }
+    // Уровни должны сохранить заданный порядок, а не слиться в одно значение.
+    EXPECT_LT(summary[0].stems[0], summary[0].stems[kStemCount - 1]);
+}
+#endif
+
 } // namespace
