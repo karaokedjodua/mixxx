@@ -1415,6 +1415,26 @@ void WOverview::drawPassthroughOverlay(QPainter* pPainter) {
     }
 }
 
+#ifdef __STEM__
+namespace {
+/// dj-station: сводная волна может объявлять дорожки, но не содержать их
+/// данных — так писали прежние сборки. Рисовать по нулям нельзя: полоса
+/// окажется пустой. Проверка дешёвая, отсчётов всего несколько тысяч.
+bool waveformHasStemData(ConstWaveformPointer pWaveform) {
+    const int dataSize = pWaveform->getDataSize();
+    const WaveformData* pData = pWaveform->data();
+    for (int i = 0; i < dataSize; i++) {
+        for (int stemIdx = 0; stemIdx < mixxx::kMaxSupportedStems; stemIdx++) {
+            if (pData[i].stems[stemIdx]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+} // anonymous namespace
+#endif
+
 bool WOverview::drawNextPixmapPart() {
     ConstWaveformPointer pWaveform = getWaveform();
     if (!pWaveform) {
@@ -1482,7 +1502,8 @@ bool WOverview::drawNextPixmapPart() {
     // цветом и со своей громкостью. Убранный вокал исчезает и отсюда.
     const QList<StemInfo> stemInfo =
             m_pCurrentTrack ? m_pCurrentTrack->getStemInfo() : QList<StemInfo>();
-    if (pWaveform->hasStem() && !stemInfo.isEmpty() && !m_pStemGain.empty()) {
+    if (pWaveform->hasStem() && !stemInfo.isEmpty() &&
+            !m_pStemGain.empty() && waveformHasStemData(pWaveform)) {
         QVector<float> stemGain;
         stemGain.reserve(static_cast<int>(m_pStemGain.size()));
         for (std::size_t stemIdx = 0; stemIdx < m_pStemGain.size(); stemIdx++) {

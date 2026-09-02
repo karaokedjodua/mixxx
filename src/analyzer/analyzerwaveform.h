@@ -40,6 +40,7 @@ struct WaveformStride {
             SampleUtil::clear(m_filteredData[i], BandCount);
             SampleUtil::clear(m_averageFilteredData[i], BandCount);
             SampleUtil::clear(m_stemData[i], m_stemCount);
+            SampleUtil::clear(m_averageStemData[i], m_stemCount);
         }
     }
 
@@ -69,6 +70,7 @@ struct WaveformStride {
                 m_filteredData[i][f] = 0.0f;
             }
             for (int stemIdx = 0; stemIdx < m_stemCount; ++stemIdx) {
+                m_averageStemData[i][stemIdx] += m_stemData[i][stemIdx];
                 m_stemData[i][stemIdx] = 0.0f;
             }
         }
@@ -92,6 +94,16 @@ struct WaveformStride {
                         m_postScaleConversion * m_averageFilteredData[i][High] /
                                         m_averageDivisor +
                                 0.5));
+                // dj-station: те же средние, но по дорожкам — иначе полоса
+                // обзора не знает, где вокал, а где ударные.
+                for (int stemIdx = 0; stemIdx < m_stemCount; stemIdx++) {
+                    datum.stems[stemIdx] = static_cast<unsigned char>(
+                            std::min(255.0,
+                                    m_postScaleConversion *
+                                                    m_averageStemData[i][stemIdx] /
+                                                    m_averageDivisor +
+                                            0.5));
+                }
             }
         } else {
             // This is the case if The Overview Waveform has more samples than the detailed waveform
@@ -105,6 +117,13 @@ struct WaveformStride {
                         m_postScaleConversion * m_filteredData[i][Mid] + 0.5));
                 datum.filtered.high = static_cast<unsigned char>(std::min(255.0,
                         m_postScaleConversion * m_filteredData[i][High] + 0.5));
+                for (int stemIdx = 0; stemIdx < m_stemCount; stemIdx++) {
+                    datum.stems[stemIdx] = static_cast<unsigned char>(
+                            std::min(255.0,
+                                    m_postScaleConversion *
+                                                    m_stemData[i][stemIdx] +
+                                            0.5));
+                }
             }
         }
 
@@ -113,6 +132,9 @@ struct WaveformStride {
             m_averageOverallData[i] = 0.0f;
             for (int f = 0; f < BandCount; ++f) {
                 m_averageFilteredData[i][f] = 0.0f;
+            }
+            for (int stemIdx = 0; stemIdx < m_stemCount; ++stemIdx) {
+                m_averageStemData[i][stemIdx] = 0.0f;
             }
         }
     }
@@ -130,6 +152,9 @@ struct WaveformStride {
 
     float m_averageOverallData[ChannelCount];
     float m_averageFilteredData[ChannelCount][BandCount];
+    // dj-station: накопитель по дорожкам для сводной волны. Без него нижняя
+    // полоса обзора получала нули в полях стемов и не могла их показывать.
+    float m_averageStemData[ChannelCount][mixxx::kMaxSupportedStems];
 
     float m_postScaleConversion;
 };
