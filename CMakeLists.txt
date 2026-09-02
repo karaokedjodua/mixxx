@@ -1469,6 +1469,7 @@ add_library(
   src/nativeeventhandlerwin.cpp
   src/network/jsonwebtask.cpp
   src/network/networktask.cpp
+  src/network/remoteapihttp.cpp
   src/network/webtask.cpp
   src/preferences/colorpaletteeditor.cpp
   src/preferences/colorpaletteeditor.cpp
@@ -2699,6 +2700,7 @@ if(BUILD_TESTING)
   set(
     src-mixxx-test
     src/test/analyserwaveformtest.cpp
+    src/test/remoteapihttptest.cpp
     src/test/analyzersilence_test.cpp
     src/test/audiotaperpot_test.cpp
     src/test/autodjprocessor_test.cpp
