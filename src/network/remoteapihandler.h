@@ -90,6 +90,7 @@ class RemoteApiHandler : public QObject {
     /// VirtualDJ без пересчёта на слабом планшете.
     void handleLibraryAnalysis(const QByteArray& body, RemoteApiReply* pReply);
     void handleLibraryPlaylists(const QByteArray& method,
+            const QByteArray& idPart,
             const QByteArray& body,
             RemoteApiReply* pReply);
 

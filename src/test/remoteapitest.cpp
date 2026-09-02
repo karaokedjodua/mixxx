@@ -438,3 +438,39 @@ TEST_F(RemoteApiTest, LibraryPlaylists) {
     EXPECT_EQ(call("POST", "/api/library/playlists", "", "{\"name\":\"x\",\"track_ids\":5}")->status, 400);
     EXPECT_EQ(call("PUT", "/api/library/playlists")->status, 405);
 }
+
+TEST_F(RemoteApiTest, LibraryPlaylistDeleteAndAutoDj) {
+    const QString location = getTestDir().filePath(kTrackLocation);
+    const TrackPointer pTrack =
+            m_pTrackCollectionManager->getOrAddTrack(TrackRef::fromFilePath(location));
+    ASSERT_NE(pTrack, nullptr);
+    const int trackId = pTrack->getId().toVariant().toInt();
+    PlaylistDAO& dao = m_pTrackCollectionManager->internalCollection()->getPlaylistDAO();
+
+    QJsonObject body;
+    body.insert("name", "to-delete");
+    body.insert("track_ids", QJsonArray{trackId});
+    body.insert("autodj", "bottom");
+    auto r = call("POST", "/api/library/playlists", "", QJsonDocument(body).toJson());
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    const int playlistId = bodyJson(*r).value("id").toInt();
+    EXPECT_EQ(dao.getAutoDJTrackIds().size(), 1) << "трек не попал в очередь Auto DJ";
+
+    const QByteArray byId = QByteArray("/api/library/playlists/") + QByteArray::number(playlistId);
+    r = call("GET", byId);
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    EXPECT_EQ(bodyJson(*r).value("name").toString(), QStringLiteral("to-delete"));
+    EXPECT_EQ(bodyJson(*r).value("track_ids").toArray().size(), 1);
+    EXPECT_EQ(bodyJson(*r).value("track_ids").toArray().first().toInt(), trackId);
+
+    EXPECT_EQ(call("POST", "/api/library/autodj/clear")->status, 200);
+    EXPECT_EQ(dao.getAutoDJTrackIds().size(), 0) << "очередь Auto DJ не очистилась";
+    EXPECT_EQ(call("GET", "/api/library/autodj/clear")->status, 405);
+
+    EXPECT_EQ(call("DELETE", byId)->status, 200);
+    EXPECT_FALSE(dao.playlistExists(playlistId));
+    EXPECT_EQ(call("DELETE", byId)->status, 404);
+    EXPECT_EQ(call("DELETE", "/api/library/playlists/abc")->status, 404);
+    EXPECT_EQ(call("GET", "/api/library/playlists/999999")->status, 404);
+    EXPECT_EQ(call("PUT", byId)->status, 404);
+}

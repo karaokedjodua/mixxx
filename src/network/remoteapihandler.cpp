@@ -216,7 +216,24 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
             return;
         }
         if (parts.size() >= 4 && parts[3] == "playlists") {
-            handleLibraryPlaylists(method, body, pReply);
+            handleLibraryPlaylists(method,
+                    parts.size() >= 5 ? parts[4] : QByteArray(),
+                    body,
+                    pReply);
+            return;
+        }
+        // POST /api/library/autodj/clear — очистить очередь Auto DJ
+        if (parts.size() >= 5 && parts[3] == "autodj" && parts[4] == "clear") {
+            if (method != "POST") {
+                replyError(pReply, 405, QStringLiteral("POST required"));
+                return;
+            }
+            if (!m_pTrackCollectionManager) {
+                replyError(pReply, 503, QStringLiteral("no library"));
+                return;
+            }
+            m_pTrackCollectionManager->internalCollection()->getPlaylistDAO().clearAutoDJQueue();
+            reply(pReply, 200, QJsonObject{{QStringLiteral("cleared"), true}});
             return;
         }
         replyError(pReply, 404, QStringLiteral("unknown library call"));
@@ -497,6 +514,7 @@ void RemoteApiHandler::handleLibraryAnalysis(const QByteArray& body, RemoteApiRe
 //   POST {name, track_ids:[...], replace:true, autodj:""|"top"|"bottom"}
 //        -> {id, name, created, tracks}
 void RemoteApiHandler::handleLibraryPlaylists(const QByteArray& method,
+        const QByteArray& idPart,
         const QByteArray& body,
         RemoteApiReply* pReply) {
     if (!m_pTrackCollectionManager) {
@@ -504,6 +522,39 @@ void RemoteApiHandler::handleLibraryPlaylists(const QByteArray& method,
         return;
     }
     PlaylistDAO& dao = m_pTrackCollectionManager->internalCollection()->getPlaylistDAO();
+
+    if (!idPart.isEmpty()) {
+        bool ok = false;
+        const int playlistId = idPart.toInt(&ok);
+        if (!ok || !dao.playlistExists(playlistId)) {
+            replyError(pReply, 404, QStringLiteral("no such playlist"));
+            return;
+        }
+        if (method == "GET") {
+            QJsonArray ids;
+            const QList<TrackId> trackIds = dao.getTrackIdsInPlaylistOrder(playlistId);
+            for (const TrackId& trackId : trackIds) {
+                ids.append(trackId.toVariant().toInt());
+            }
+            reply(pReply, 200,
+                    QJsonObject{{QStringLiteral("id"), playlistId},
+                            {QStringLiteral("name"), dao.getPlaylistName(playlistId)},
+                            {QStringLiteral("locked"), dao.isPlaylistLocked(playlistId)},
+                            {QStringLiteral("track_ids"), ids}});
+            return;
+        }
+        if (method == "DELETE") {
+            if (dao.isPlaylistLocked(playlistId)) {
+                replyError(pReply, 409, QStringLiteral("playlist is locked"));
+                return;
+            }
+            dao.deletePlaylist(playlistId);
+            reply(pReply, 200, QJsonObject{{QStringLiteral("deleted"), playlistId}});
+            return;
+        }
+        replyError(pReply, 405, QStringLiteral("GET or DELETE required"));
+        return;
+    }
 
     if (method == "GET") {
         QJsonArray list;
@@ -572,6 +623,10 @@ void RemoteApiHandler::handleLibraryPlaylists(const QByteArray& method,
         return;
     }
     const QString autodj = o.value(QStringLiteral("autodj")).toString();
+    if (!autodj.isEmpty() && dao.getPlaylistIdFromName(QStringLiteral("Auto DJ")) < 0) {
+        // Очередь Auto DJ (AUTODJ_TABLE) заводит AutoDJFeature; в тестах её нет.
+        dao.createPlaylist(QStringLiteral("Auto DJ"), PlaylistDAO::PLHT_AUTO_DJ);
+    }
     if (autodj == QLatin1String("top")) {
         dao.addPlaylistToAutoDJQueue(playlistId, PlaylistDAO::AutoDJSendLoc::TOP);
     } else if (autodj == QLatin1String("bottom")) {
