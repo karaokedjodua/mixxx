@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QList>
 #include <QPixmap>
+#include <QTimer>
 
 #include <memory>
 #include <vector>
@@ -79,6 +80,7 @@ class WOverview : public WWidget, public TrackDropTarget {
     /// полосу обзора перерисовываем целиком, иначе она продолжит показывать
     /// убранный вокал. Сводная волна всего 3840 отсчётов, это дёшево.
     void slotStemGainChanged(double v);
+    void slotRebuildStemOverview();
 #endif
 
   private:
@@ -217,6 +219,10 @@ class WOverview : public WWidget, public TrackDropTarget {
     // перерисовывается, как и верхняя волна.
     std::vector<std::unique_ptr<ControlProxy>> m_pStemGain;
     std::vector<std::unique_ptr<ControlProxy>> m_pStemMute;
+    // Одно движение ручки меняет громкость сразу всех дорожек, а полоса
+    // собирается заново целиком. Без склейки это десятки полных перерисовок
+    // в секунду на каждую деку — станция от такого вставала.
+    QTimer m_stemRedrawTimer;
 #endif
 
     QPointF m_timeRulerPos;

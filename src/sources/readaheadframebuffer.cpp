@@ -46,6 +46,20 @@ ReadAheadFrameBuffer::ReadAheadFrameBuffer(
           m_readIndex(kUnknownFrameIndex) {
 }
 
+bool ReadAheadFrameBuffer::shouldReportDiscontinuity() {
+    constexpr int kMaxReports = 5;
+    if (m_discontinuitiesReported > kMaxReports) {
+        return false;
+    }
+    if (++m_discontinuitiesReported > kMaxReports) {
+        kLogger.warning()
+                << "Further frame discontinuity messages are suppressed "
+                   "for this buffer";
+        return false;
+    }
+    return true;
+}
+
 void ReadAheadFrameBuffer::adjustCapacityBeforeBuffering(
         FrameCount frameCount) {
     DEBUG_ASSERT(frameCount >= 0);
@@ -133,6 +147,7 @@ bool ReadAheadFrameBuffer::fillBuffer(
     if (writeIndex() < inputRange.start()) {
         const auto gapRange = IndexRange::between(writeIndex(), inputRange.start());
         DEBUG_ASSERT(gapRange.orientation() == IndexRange::Orientation::Forward);
+        if (shouldReportDiscontinuity())
         kLogger.warning()
                 << "Missing range"
                 << gapRange
@@ -296,6 +311,7 @@ WritableSampleFrames ReadAheadFrameBuffer::consumeAndFillBuffer(
         // Overlaps should never occur, but we cannot be sure
         if (overlapRange.orientation() ==
                 IndexRange::Orientation::Forward) {
+            if (shouldReportDiscontinuity())
             kLogger.warning()
                     << "Overlapping range"
                     << overlapRange
@@ -321,6 +337,7 @@ WritableSampleFrames ReadAheadFrameBuffer::consumeAndFillBuffer(
         // Overlaps should never occur, but we cannot be sure
         if (overlapRange.orientation() ==
                 IndexRange::Orientation::Forward) {
+            if (shouldReportDiscontinuity())
             kLogger.warning()
                     << "Overlapping range"
                     << overlapRange
@@ -368,7 +385,8 @@ WritableSampleFrames ReadAheadFrameBuffer::consumeAndFillBuffer(
                     gapRange.orientation() !=
                     IndexRange::Orientation::Backward);
             if (gapRange.orientation() == IndexRange::Orientation::Forward) {
-                kLogger.warning()
+                if (shouldReportDiscontinuity())
+            kLogger.warning()
                         << "Missing range"
                         << gapRange
                         << "between output buffer"

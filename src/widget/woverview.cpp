@@ -141,6 +141,12 @@ WOverview::WOverview(
         m_pStemMute.back()->connectValueChanged(
                 this, &WOverview::slotStemGainChanged);
     }
+    m_stemRedrawTimer.setSingleShot(true);
+    m_stemRedrawTimer.setInterval(80);
+    connect(&m_stemRedrawTimer,
+            &QTimer::timeout,
+            this,
+            &WOverview::slotRebuildStemOverview);
 #endif
 
     m_pPassthroughLabel = make_parented<QLabel>(this);
@@ -1562,6 +1568,16 @@ bool WOverview::drawNextPixmapPart() {
 #ifdef __STEM__
 void WOverview::slotStemGainChanged(double v) {
     Q_UNUSED(v);
+    if (!m_pWaveform || !m_pWaveform->hasStem()) {
+        return;
+    }
+    // Склеиваем всплеск изменений в одну перерисовку.
+    if (!m_stemRedrawTimer.isActive()) {
+        m_stemRedrawTimer.start();
+    }
+}
+
+void WOverview::slotRebuildStemOverview() {
     if (!m_pWaveform || !m_pWaveform->hasStem()) {
         return;
     }

@@ -149,9 +149,18 @@ class ReadAheadFrameBuffer final {
     FrameCount discardLastBufferedFrames(
             FrameCount frameCount);
 
+    /// dj-station: разрывы и наложения кадров здесь ожидаемы и тут же
+    /// компенсируются. У Matroska (стемы VirtualDJ) метки времени идут в
+    /// миллисекундах, то есть грубее одного отсчёта, поэтому расхождение
+    /// возникает почти на каждом пакете. Сообщение о каждом заполняло журнал
+    /// десятками тысяч строк и само по себе вешало станцию. Оставляем первые
+    /// несколько на буфер — этого хватает, чтобы заметить настоящую поломку.
+    bool shouldReportDiscontinuity();
+
     audio::SignalInfo m_signalInfo;
     ReadAheadSampleBuffer m_sampleBuffer;
     FrameIndex m_readIndex;
+    int m_discontinuitiesReported = 0;
 };
 
 } // namespace mixxx
