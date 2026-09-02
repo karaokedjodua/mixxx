@@ -3,13 +3,16 @@
 extern "C" {
 
 #include <libavutil/avutil.h>
+#include <libavutil/dict.h>
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100) // FFmpeg 5.1
 #include <libavutil/channel_layout.h>
 #endif
 
 } // extern "C"
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 #include "sources/soundsourceffmpeg.h"
 #include "util/assert.h"
@@ -27,6 +30,17 @@ namespace {
 // STEM constants
 constexpr int kNumStreams = 5;
 constexpr int kRequiredStreamCount = kNumStreams - 1; // Stem count doesn't include the main mix
+
+// dj-station: раскладка .vdjstems. Пять дорожек, готового микса среди них нет —
+// в отличие от файлов Native Instruments, где первая дорожка это премикс.
+constexpr int kVdjStreamCount = 5;
+constexpr int kVdjVocal = 0;
+constexpr int kVdjHihat = 1;
+constexpr int kVdjBass = 2;
+constexpr int kVdjInstruments = 3;
+constexpr int kVdjKick = 4;
+
+const QString kVdjStemsExtension = QStringLiteral(".vdjstems");
 
 const Logger kLogger("SoundSourceSTEM");
 
@@ -46,7 +60,7 @@ using AVFormatContextPtr =
 const QString SoundSourceProviderSTEM::kDisplayName = QStringLiteral("STEM with FFmpeg");
 
 QStringList SoundSourceProviderSTEM::getSupportedFileTypes() const {
-    return {"stem.mp4", "stem.m4a"};
+    return {"stem.mp4", "stem.m4a", "vdjstems"};
 }
 
 SoundSourceProviderPriority SoundSourceProviderSTEM::getPriorityHint(
@@ -106,9 +120,11 @@ SoundSource::OpenResult SoundSourceSTEM::tryOpen(
         return OpenResult::Failed;
     }
 
-    bool foundPremixedStream = false;
-    AVStream* firstStem = nullptr;
-    int stemCount = 0;
+    // dj-station: формат определяем по расширению — внутри это два разных
+    // контейнера, и раскладка дорожек у них своя.
+    const bool isVdjStems = getLocalFileName().endsWith(
+            kVdjStemsExtension, Qt::CaseInsensitive);
+
     uint selectedStemMask = params.stemMask();
     VERIFY_OR_DEBUG_ASSERT(selectedStemMask <= 2 << mixxx::kMaxSupportedStems) {
         kLogger.warning().noquote()
@@ -117,82 +133,141 @@ SoundSource::OpenResult SoundSourceSTEM::tryOpen(
     }
     OpenParams stemParam = params;
     stemParam.setChannelCount(mixxx::audio::ChannelCount::stereo());
+
+    // Сначала просто собираем номера звуковых дорожек по порядку.
+    std::vector<int> audioStreams;
     for (unsigned int streamIdx = 0; streamIdx < pavInputFormatContext->nb_streams; streamIdx++) {
-        if (pavInputFormatContext->streams[streamIdx]->codecpar->codec_type !=
-                AVMEDIA_TYPE_AUDIO) {
+        const AVCodecParameters* pCodecPar =
+                pavInputFormatContext->streams[streamIdx]->codecpar;
+        if (pCodecPar->codec_type != AVMEDIA_TYPE_AUDIO) {
             continue;
         }
 
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100) // FFmpeg 5.1
-        if (pavInputFormatContext->streams[streamIdx]->codecpar->ch_layout.nb_channels !=
-                mixxx::audio::ChannelCount::stereo()) {
+        if (pCodecPar->ch_layout.nb_channels != mixxx::audio::ChannelCount::stereo()) {
 #else
-        if (pavInputFormatContext->streams[streamIdx]->codecpar->channels !=
-                mixxx::audio::ChannelCount::stereo()) {
+        if (pCodecPar->channels != mixxx::audio::ChannelCount::stereo()) {
 #endif
             kLogger.warning().noquote()
                     << "stream at position" << streamIdx << "is not in stereo";
             return OpenResult::Failed;
         }
+        audioStreams.push_back(static_cast<int>(streamIdx));
+    }
 
-        if (!foundPremixedStream) {
-            // We can currently allow this, as we NEVER LOAD the pre-mastered
-            // track, as we do not have analyzer data for it.
-            // This is because we only support one set of metadata for the whole
-            // STEM file, where we determine the track parameters from an
-            // on-the-fly mix of all 4 stems. Especially the replaygain differs
-            // between the on-the-fly mix and the pre-mastered track, because we
-            // do not apply DSP (limiter, equalizer, compressor) to the
-            // on-the-fly mix. If this ever gets changed, we should set
-            // `initSampleRateOnce` and `initBitrateOnce` to match the stem
-            // sample rate and bit rate, such that
-            // SoundSourceFFmpeg::resampleDecodedAVFrame will take care to
-            // resample the main stream, in order to use the same time scale and
-            // keep a working grid/cue definition
-            foundPremixedStream = true;
-            continue;
+    // План раскладки: на каждый стем — одна дорожка, либо две, если их нужно
+    // сложить.
+    std::vector<std::vector<int>> slotPlan;
+    if (isVdjStems) {
+        if (static_cast<int>(audioStreams.size()) != kVdjStreamCount) {
+            kLogger.warning().noquote()
+                    << "expected to find" << kVdjStreamCount
+                    << "stem but found" << audioStreams.size();
+            return OpenResult::Failed;
+        }
+        // VirtualDJ подписывает дорожки, поэтому ищем их по именам: порядок
+        // внутри файла может измениться, а метки останутся.
+        const auto findByTitle = [&](const char* title) -> int {
+            for (int streamIdx : audioStreams) {
+                const AVDictionaryEntry* pTitle = av_dict_get(
+                        pavInputFormatContext->streams[streamIdx]->metadata,
+                        "title",
+                        nullptr,
+                        0);
+                if (pTitle && qstricmp(pTitle->value, title) == 0) {
+                    return streamIdx;
+                }
+            }
+            return -1;
+        };
+
+        int vocal = findByTitle("vocal");
+        int hihat = findByTitle("hihat");
+        int bass = findByTitle("bass");
+        int instruments = findByTitle("instruments");
+        int kick = findByTitle("kick");
+        if (vocal < 0 || hihat < 0 || bass < 0 || instruments < 0 || kick < 0) {
+            // Меток нет — берём обычный для VirtualDJ порядок дорожек.
+            vocal = audioStreams[kVdjVocal];
+            hihat = audioStreams[kVdjHihat];
+            bass = audioStreams[kVdjBass];
+            instruments = audioStreams[kVdjInstruments];
+            kick = audioStreams[kVdjKick];
         }
 
-        stemCount++;
+        // Готового микса в .vdjstems нет — звучит сумма всех дорожек.
+        // Бочку и хэты сводим в общие ударные: движок держит ровно четыре
+        // стема, а порядок слотов должен совпадать со StemInfoImporter.
+        slotPlan = {{hihat, kick}, {bass}, {instruments}, {vocal}};
+    } else {
+        if (static_cast<int>(audioStreams.size()) != kNumStreams) {
+            kLogger.warning().noquote()
+                    << "expected to find" << kRequiredStreamCount
+                    << "stem but found"
+                    << static_cast<int>(audioStreams.size()) - 1;
+            return OpenResult::Failed;
+        }
+        // The first stream is the pre-mastered mix, which we NEVER LOAD, as we
+        // do not have analyzer data for it.
+        // This is because we only support one set of metadata for the whole
+        // STEM file, where we determine the track parameters from an
+        // on-the-fly mix of all 4 stems. Especially the replaygain differs
+        // between the on-the-fly mix and the pre-mastered track, because we
+        // do not apply DSP (limiter, equalizer, compressor) to the
+        // on-the-fly mix. If this ever gets changed, we should set
+        // `initSampleRateOnce` and `initBitrateOnce` to match the stem
+        // sample rate and bit rate, such that
+        // SoundSourceFFmpeg::resampleDecodedAVFrame will take care to
+        // resample the main stream, in order to use the same time scale and
+        // keep a working grid/cue definition
+        for (int stemIdx = 0; stemIdx < kRequiredStreamCount; stemIdx++) {
+            slotPlan.push_back({audioStreams[stemIdx + 1]});
+        }
+    }
 
-        if (!firstStem) {
-            // We always keep track of the stem to verify that stem stream properties are matching
-            firstStem = pavInputFormatContext->streams[streamIdx];
-        } else {
-            if (pavInputFormatContext->streams[streamIdx]->codecpar->codec_id !=
-                    firstStem->codecpar->codec_id) {
+    // Все дорожки должны быть в одном кодеке и на одной частоте, иначе сетка
+    // битов и метки разъедутся между стемами.
+    const AVStream* pFirstStem = nullptr;
+    for (const auto& slot : slotPlan) {
+        for (int streamIdx : slot) {
+            const AVStream* pStream = pavInputFormatContext->streams[streamIdx];
+            if (!pFirstStem) {
+                pFirstStem = pStream;
+                continue;
+            }
+            if (pStream->codecpar->codec_id != pFirstStem->codecpar->codec_id) {
                 kLogger.warning().noquote()
                         << "Stem at position" << streamIdx << "is using a different codec";
                 return OpenResult::Failed;
             }
-
-            if (pavInputFormatContext->streams[streamIdx]
-                            ->codecpar->sample_rate !=
-                    firstStem->codecpar->sample_rate) {
+            if (pStream->codecpar->sample_rate != pFirstStem->codecpar->sample_rate) {
                 kLogger.warning().noquote()
                         << "Stem at position" << streamIdx << "is using a different sample rate";
                 return OpenResult::Failed;
             }
         }
+    }
 
-        // StemIdx is equal to StreamIdx -1 (the main mix)
-        if (selectedStemMask && !(selectedStemMask & 1 << (streamIdx - 1))) {
+    for (std::size_t slotIdx = 0; slotIdx < slotPlan.size(); slotIdx++) {
+        if (selectedStemMask && !(selectedStemMask & 1u << slotIdx)) {
             continue;
         }
 
-        m_pStereoStreams.emplace_back(std::make_unique<SoundSourceFFmpeg>(getUrl(), streamIdx));
-        if (m_pStereoStreams.back()->open(OpenMode::Strict /*Unused*/,
-                    stemParam) != OpenResult::Succeeded) {
+        auto pPrimary = std::make_unique<SoundSourceFFmpeg>(getUrl(), slotPlan[slotIdx][0]);
+        if (pPrimary->open(OpenMode::Strict /*Unused*/, stemParam) != OpenResult::Succeeded) {
             return OpenResult::Failed;
         }
-    }
+        m_pStereoStreams.emplace_back(std::move(pPrimary));
 
-    if (stemCount != kRequiredStreamCount) {
-        kLogger.warning().noquote()
-                << "expected to find" << kRequiredStreamCount
-                << "stem but found" << stemCount;
-        close();
-        return OpenResult::Failed;
+        // Вторая дорожка слота, если она есть, звучит вместе с первой.
+        std::unique_ptr<SoundSourceFFmpeg> pAux;
+        if (slotPlan[slotIdx].size() > 1) {
+            pAux = std::make_unique<SoundSourceFFmpeg>(getUrl(), slotPlan[slotIdx][1]);
+            if (pAux->open(OpenMode::Strict /*Unused*/, stemParam) != OpenResult::Succeeded) {
+                return OpenResult::Failed;
+            }
+        }
+        m_pAuxStreams.emplace_back(std::move(pAux));
     }
 
     VERIFY_OR_DEBUG_ASSERT(!m_pStereoStreams.empty()) {
@@ -227,6 +302,11 @@ void SoundSourceSTEM::close() {
     for (auto& stream : m_pStereoStreams) {
         stream->close();
     }
+    for (auto& stream : m_pAuxStreams) {
+        if (stream) {
+            stream->close();
+        }
+    }
 }
 
 ReadableSampleFrames SoundSourceSTEM::readSampleFramesClamped(
@@ -250,6 +330,13 @@ ReadableSampleFrames SoundSourceSTEM::readSampleFramesClamped(
     if (stemSampleLength > m_buffer.size()) {
         m_buffer = SampleBuffer(stemSampleLength);
     }
+    // Второй буфер нужен только там, где в стем сходятся две дорожки.
+    const bool hasAuxStream = std::any_of(m_pAuxStreams.cbegin(),
+            m_pAuxStreams.cend(),
+            [](const auto& pStream) { return pStream != nullptr; });
+    if (hasAuxStream && stemSampleLength > m_auxBuffer.size()) {
+        m_auxBuffer = SampleBuffer(stemSampleLength);
+    }
 
     ReadableSampleFrames read(globalSampleFrames.frameIndexRange(),
             SampleBuffer::ReadableSlice(
@@ -265,8 +352,23 @@ ReadableSampleFrames SoundSourceSTEM::readSampleFramesClamped(
                 globalSampleFrames.writableLength());
     }
 
+    // Подмешать вторую дорожку слота в уже прочитанный кусок.
+    const auto readAuxInto = [&](std::size_t slotIdx, CSAMPLE* pTarget) {
+        if (slotIdx >= m_pAuxStreams.size() || !m_pAuxStreams[slotIdx]) {
+            return;
+        }
+        WritableSampleFrames auxFrame = WritableSampleFrames(
+                globalSampleFrames.frameIndexRange(),
+                SampleBuffer::WritableSlice(
+                        m_auxBuffer.data(),
+                        stemSampleLength));
+        m_pAuxStreams[slotIdx]->readSampleFrames(auxFrame);
+        SampleUtil::add(pTarget, m_auxBuffer.data(), stemSampleLength);
+    };
+
     if (stemCount == 1) {
         m_pStereoStreams[0]->readSampleFrames(globalSampleFrames);
+        readAuxInto(0, globalSampleFrames.writableData());
         return read;
     }
 
@@ -277,6 +379,7 @@ ReadableSampleFrames SoundSourceSTEM::readSampleFramesClamped(
                         m_buffer.data(),
                         stemSampleLength));
         m_pStereoStreams[streamIdx]->readSampleFrames(currentStemFrame);
+        readAuxInto(streamIdx, m_buffer.data());
 
         // Each m_pStereoStreams[streamIdx] provides a standard stereo signal (L/R).
         // in stem mode we need to transform the data to an interleaved layout:

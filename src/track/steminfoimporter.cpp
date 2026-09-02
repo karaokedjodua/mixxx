@@ -24,6 +24,12 @@ const QStringList kStemMimes = {"audio/mp4", "audio/m4a", "audio/x-m4a", "video/
 // fails, we fallback to match the filename extension with "preferred" file
 // extensions
 const QStringList kStemPreferredFileExtensions = {".stem.mp4", ".stem.m4a"};
+
+// dj-station: VirtualDJ хранит стемы в Matroska-контейнере .vdjstems. Манифеста
+// Native Instruments там нет, поэтому раскладку дорожек подставляем сами.
+// Читаем эти файлы напрямую, чтобы не плодить копии: конвертация всей фонотеки
+// во второй формат заняла бы сотни гигабайт.
+const QString kVdjStemsExtension = QStringLiteral(".vdjstems");
 const QColor kStemDefaultColor[] = {
         QColor(0x00, 0x9E, 0x73),
         QColor(0xD5, 0x5E, 0x00),
@@ -111,6 +117,11 @@ bool StemInfoImporter::hasStemAtom(const QString& filePath) {
 // static
 bool StemInfoImporter::maybeStemFile(
         const QString& fileName, QMimeType mimeType) {
+    // dj-station: .vdjstems опознаём по расширению. Определять по MIME нельзя —
+    // это обычный Matroska, неотличимый от видеофайла.
+    if (fileName.endsWith(kVdjStemsExtension, Qt::CaseInsensitive)) {
+        return true;
+    }
     if (!mimeType.isValid() || mimeType.isDefault()) {
         // If no MIME type was previously detected for the file content, we read it now.
         mimeType = QMimeDatabase().mimeTypeForFile(
@@ -129,6 +140,17 @@ bool StemInfoImporter::maybeStemFile(
 
 QList<StemInfo> StemInfoImporter::importStemInfos(
         const QString& filePath) {
+    // dj-station: у .vdjstems манифеста нет — отдаём раскладку, к которой
+    // сводятся пять дорожек VirtualDJ (бочка и хэты складываются в ударные).
+    if (filePath.endsWith(kVdjStemsExtension, Qt::CaseInsensitive)) {
+        return {
+                StemInfo(QStringLiteral("Drums"), kStemDefaultColor[0]),
+                StemInfo(QStringLiteral("Bass"), kStemDefaultColor[1]),
+                StemInfo(QStringLiteral("Other"), kStemDefaultColor[2]),
+                StemInfo(QStringLiteral("Vocals"), kStemDefaultColor[3]),
+        };
+    }
+
     // Fetch the STEM manifest which contain stream details
     auto file = QFile(filePath);
     if (!file.open(QIODeviceBase::ReadOnly | QIODeviceBase::Unbuffered)) {

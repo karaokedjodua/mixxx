@@ -21,7 +21,13 @@ class SoundSourceSTEM : public SoundSource {
   private:
     // Contains each stem source, or the main mix if opened in stereo mode
     std::vector<std::unique_ptr<SoundSourceFFmpeg>> m_pStereoStreams;
+    // dj-station: параллельный список — вторая дорожка, которую нужно
+    // подмешать в тот же стем. Нужен для .vdjstems: VirtualDJ держит бочку и
+    // хэты порознь, а движок Mixxx рассчитан ровно на четыре стема, поэтому
+    // складываем их в общие ударные. Для файлов Native Instruments — пусто.
+    std::vector<std::unique_ptr<SoundSourceFFmpeg>> m_pAuxStreams;
     SampleBuffer m_buffer;
+    SampleBuffer m_auxBuffer;
 
     mixxx::audio::ChannelCount m_requestedChannelCount;
 

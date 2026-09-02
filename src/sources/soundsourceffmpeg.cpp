@@ -743,6 +743,19 @@ SoundSource::OpenResult SoundSourceFFmpeg::tryOpen(
     }
 
     if (m_pavStream->duration == AV_NOPTS_VALUE) {
+        // dj-station: Matroska (а значит и стемы VirtualDJ) обычно не
+        // записывает длительность в каждую дорожку — она известна только для
+        // контейнера целиком. Пересчитываем её в шкалу дорожки, иначе такие
+        // файлы не открываются вовсе.
+        const int64_t containerDuration = m_pavInputFormatContext->duration;
+        if (containerDuration != AV_NOPTS_VALUE && containerDuration > 0) {
+            m_pavStream->duration = av_rescale_q(containerDuration,
+                    av_make_q(1, AV_TIME_BASE),
+                    m_pavStream->time_base);
+        }
+    }
+
+    if (m_pavStream->duration == AV_NOPTS_VALUE) {
         // Streams with unknown or unlimited duration are
         // not (yet) supported.
         kLogger.warning()

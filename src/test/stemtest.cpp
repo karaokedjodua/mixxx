@@ -167,4 +167,125 @@ INSTANTIATE_TEST_SUITE_P(
             return info.param;
         });
 
+// dj-station: чтение стемов VirtualDJ. Путь к файлу берём из переменной
+// окружения MIXXX_VDJSTEMS_TEST_FILE — держать в репозитории десятки мегабайт
+// ради одного теста незачем, а свободно распространяемого образца у нас нет.
+class VdjStemsFixture : public MixxxTest {
+  protected:
+    void SetUp() override {
+        ASSERT_TRUE(SoundSourceProxy::isFileTypeSupported("vdjstems") ||
+                SoundSourceProxy::registerProviders());
+        m_filePath = qEnvironmentVariable("MIXXX_VDJSTEMS_TEST_FILE");
+    }
+
+    bool skipWithoutSample() {
+        if (m_filePath.isEmpty()) {
+            return true;
+        }
+        return false;
+    }
+
+    QString m_filePath;
+};
+
+TEST_F(VdjStemsFixture, FileTypeIsSupported) {
+    EXPECT_TRUE(SoundSourceProxy::isFileTypeSupported("vdjstems"));
+}
+
+TEST_F(VdjStemsFixture, ImporterRecognisesFile) {
+    if (skipWithoutSample()) {
+        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
+    }
+    EXPECT_TRUE(mixxx::StemInfoImporter::maybeStemFile(m_filePath));
+    EXPECT_EQ(mixxx::StemInfoImporter::importStemInfos(m_filePath).size(), 4);
+
+    TrackPointer pTrack(Track::newTemporary(m_filePath));
+    EXPECT_TRUE(mixxx::StemInfoImporter::maybeStemFile(pTrack->getLocation()))
+            << "путь трека: " << pTrack->getLocation().toStdString();
+}
+
+TEST_F(VdjStemsFixture, StemInfoIsSynthesised) {
+    if (skipWithoutSample()) {
+        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
+    }
+    TrackPointer pTrack(Track::newTemporary(m_filePath));
+
+    mixxx::AudioSource::OpenParams config;
+    config.setChannelCount(mixxx::audio::ChannelCount(2));
+    ASSERT_NE(SoundSourceProxy(pTrack).openAudioSource(config), nullptr);
+
+    const auto stemInfo = pTrack->getStemInfo();
+    ASSERT_EQ(stemInfo.size(), 4);
+    EXPECT_EQ(stemInfo.at(0).getLabel(), QStringLiteral("Drums"));
+    EXPECT_EQ(stemInfo.at(1).getLabel(), QStringLiteral("Bass"));
+    EXPECT_EQ(stemInfo.at(2).getLabel(), QStringLiteral("Other"));
+    EXPECT_EQ(stemInfo.at(3).getLabel(), QStringLiteral("Vocals"));
+}
+
+TEST_F(VdjStemsFixture, OpensAsFourStems) {
+    if (skipWithoutSample()) {
+        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
+    }
+    SoundSourceSTEM sourceStem(QUrl::fromLocalFile(m_filePath));
+
+    mixxx::AudioSource::OpenParams config;
+    config.setChannelCount(mixxx::audio::ChannelCount(8));
+    ASSERT_EQ(sourceStem.open(AudioSource::OpenMode::Strict, config),
+            AudioSource::OpenResult::Succeeded);
+
+    EXPECT_EQ(mixxx::audio::SignalInfo(mixxx::audio::ChannelCount::stem(),
+                      mixxx::audio::SampleRate(44100)),
+            sourceStem.getSignalInfo());
+}
+
+// Каждый из четырёх стемов должен звучать и отличаться от остальных. Если бы
+// сложение дорожек ломалось, ударные оказались бы тишиной или копией соседа.
+TEST_F(VdjStemsFixture, EveryStemDecodesDistinctAudio) {
+    if (skipWithoutSample()) {
+        GTEST_SKIP() << "MIXXX_VDJSTEMS_TEST_FILE не задан";
+    }
+    SoundSourceSTEM sourceStem(QUrl::fromLocalFile(m_filePath));
+
+    mixxx::AudioSource::OpenParams config;
+    config.setChannelCount(mixxx::audio::ChannelCount(8));
+    ASSERT_EQ(sourceStem.open(AudioSource::OpenMode::Strict, config),
+            AudioSource::OpenResult::Succeeded);
+
+    constexpr SINT kStemSlots = 4;
+    constexpr SINT kChannels = 8;
+    // Читаем из середины трека: начало часто оказывается тишиной.
+    const SINT startFrame = sourceStem.frameIndexRange().length() / 2;
+    const SINT frameCount = 100000;
+    ASSERT_GT(sourceStem.frameIndexRange().length(), startFrame + frameCount);
+
+    SampleBuffer buffer(frameCount * kChannels);
+    const auto readFrames = sourceStem.readSampleFrames(
+            WritableSampleFrames(
+                    mixxx::IndexRange::forward(startFrame, frameCount),
+                    SampleBuffer::WritableSlice(buffer.data(), buffer.size())));
+    ASSERT_EQ(readFrames.frameLength(), frameCount);
+
+    double peak[kStemSlots] = {0.0, 0.0, 0.0, 0.0};
+    for (SINT frame = 0; frame < frameCount; frame++) {
+        for (SINT slot = 0; slot < kStemSlots; slot++) {
+            const CSAMPLE sample = buffer[frame * kChannels + 2 * slot];
+            peak[slot] = qMax(peak[slot], static_cast<double>(qAbs(sample)));
+        }
+    }
+
+    for (SINT slot = 0; slot < kStemSlots; slot++) {
+        EXPECT_GT(peak[slot], 0.0001) << "стем " << slot << " оказался тишиной";
+    }
+
+    for (SINT slot = 1; slot < kStemSlots; slot++) {
+        bool identical = true;
+        for (SINT frame = 0; frame < frameCount && identical; frame++) {
+            if (buffer[frame * kChannels] != buffer[frame * kChannels + 2 * slot]) {
+                identical = false;
+            }
+        }
+        EXPECT_FALSE(identical) << "стем " << slot << " совпал с ударными";
+    }
+}
+
 } // namespace

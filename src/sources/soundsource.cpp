@@ -53,6 +53,14 @@ QString SoundSource::getTypeFromFile(const QFileInfo& fileInfo) {
         // https://mixxx.zulipchat.com/#narrow/stream/109171-development/topic/mimetype.20sometimes.20wrong
         return fileSuffix;
     }
+#ifdef __STEM__
+    if (fileSuffix == QLatin1String("vdjstems")) {
+        // dj-station: стемы VirtualDJ лежат в Matroska, и по содержимому этот
+        // контейнер неотличим от обычного видео — определять тип по MIME здесь
+        // нельзя, доверяем расширению.
+        return fileSuffix;
+    }
+#endif
     QMimeType mimeType = QMimeDatabase().mimeTypeForFile(
             fileInfo, QMimeDatabase::MatchContent);
 #ifdef __STEM__

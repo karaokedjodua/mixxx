@@ -1120,7 +1120,8 @@ TEST_F(SoundSourceProxyTest, taglibStringToEnumFileType) {
     const QStringList fileTypes = SoundSourceProxy::getSupportedFileTypes();
     for (const auto& fileType : fileTypes) {
         qDebug() << fileType;
-        if (fileType != "okt" &&     // Oktalyzer
+        if (fileType != "okt" &&           // Oktalyzer
+                fileType != "vdjstems" && // Matroska, меток TagLib в нём нет
                 fileType != "stm") { // "Scream Tracker";
             ASSERT_NE(mixxx::taglib::stringToEnumFileType(fileType),
                     mixxx::taglib::FileType::Unknown);
