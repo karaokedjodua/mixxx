@@ -56,8 +56,8 @@
             </control>
             <control>
                 <group>[Master]</group>
-                <key>PioneerDDJSX.panelSelectButton</key>
-                <description>Show/hide EffectRack/Sampler, Button: left PANEL SELECT</description>
+                <key>PioneerDDJSX.tabToggleButton</key>
+                <description>Toggle screen page PERFORMANCE / last page ([Tab],current), Button: PANEL SELECT</description>
                 <status>0x96</status>
                 <midino>0x78</midino>
                 <options>
@@ -77,7 +77,7 @@
             <control>
                 <group>[Master]</group>
                 <key>PioneerDDJSX.shiftBackButton</key>
-                <description>Toggle maximized view of Library, Button: SHIFT &amp; BACK</description>
+                <description>Cycle skin pages PERFORMANCE/BROWSE/SAMPLER/MENU, Button: SHIFT &amp; BACK (VIEW)</description>
                 <status>0x96</status>
                 <midino>0x66</midino>
                 <options>
@@ -6460,6 +6460,1086 @@
                 <description>FX2 Effect 3 Select (LSB), Knob: SHIFT + FX2-3</description>
                 <status>0xB5</status>
                 <midino>0x36</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.toggleCueLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + HOT CUE (CUE LOOP, Deck 1 active)</description>
+                <status>0x90</status>
+                <midino>0x69</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.toggleSlicerLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SLICER (SLICER LOOP, Deck 1 active)</description>
+                <status>0x90</status>
+                <midino>0x6D</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.toggleStemsMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SAMPLER (STEMS: pads 1-4 mute, 5-8 solo, Deck 1 active)</description>
+                <status>0x90</status>
+                <midino>0x6F</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 1 loop, Pad: CUE LOOP 1 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x40</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 1, Pad: SLICER LOOP 1 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x60</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 1 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x70</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 2 loop, Pad: CUE LOOP 2 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x41</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 2, Pad: SLICER LOOP 2 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x61</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 2 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x71</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 3 loop, Pad: CUE LOOP 3 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x42</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 3, Pad: SLICER LOOP 3 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x62</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 3 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x72</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 4 loop, Pad: CUE LOOP 4 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x43</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 4, Pad: SLICER LOOP 4 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x63</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 4 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x73</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 5 loop, Pad: CUE LOOP 5 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x44</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 5, Pad: SLICER LOOP 5 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x64</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 5 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x74</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 6 loop, Pad: CUE LOOP 6 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x45</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 6, Pad: SLICER LOOP 6 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x65</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 6 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x75</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 7 loop, Pad: CUE LOOP 7 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x46</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 7, Pad: SLICER LOOP 7 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x66</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 7 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x76</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 8 loop, Pad: CUE LOOP 8 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x47</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 8, Pad: SLICER LOOP 8 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x67</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 8 (Deck 1 active)</description>
+                <status>0x97</status>
+                <midino>0x77</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.toggleCueLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + HOT CUE (CUE LOOP, Deck 2 active)</description>
+                <status>0x91</status>
+                <midino>0x69</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.toggleSlicerLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SLICER (SLICER LOOP, Deck 2 active)</description>
+                <status>0x91</status>
+                <midino>0x6D</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.toggleStemsMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SAMPLER (STEMS: pads 1-4 mute, 5-8 solo, Deck 2 active)</description>
+                <status>0x91</status>
+                <midino>0x6F</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 1 loop, Pad: CUE LOOP 1 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x40</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 1, Pad: SLICER LOOP 1 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x60</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 1 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x70</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 2 loop, Pad: CUE LOOP 2 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x41</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 2, Pad: SLICER LOOP 2 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x61</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 2 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x71</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 3 loop, Pad: CUE LOOP 3 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x42</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 3, Pad: SLICER LOOP 3 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x62</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 3 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x72</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 4 loop, Pad: CUE LOOP 4 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x43</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 4, Pad: SLICER LOOP 4 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x63</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 4 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x73</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 5 loop, Pad: CUE LOOP 5 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x44</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 5, Pad: SLICER LOOP 5 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x64</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 5 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x74</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 6 loop, Pad: CUE LOOP 6 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x45</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 6, Pad: SLICER LOOP 6 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x65</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 6 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x75</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 7 loop, Pad: CUE LOOP 7 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x46</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 7, Pad: SLICER LOOP 7 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x66</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 7 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x76</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 8 loop, Pad: CUE LOOP 8 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x47</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 8, Pad: SLICER LOOP 8 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x67</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 8 (Deck 2 active)</description>
+                <status>0x98</status>
+                <midino>0x77</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.toggleCueLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + HOT CUE (CUE LOOP, Deck 3 active)</description>
+                <status>0x92</status>
+                <midino>0x69</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.toggleSlicerLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SLICER (SLICER LOOP, Deck 3 active)</description>
+                <status>0x92</status>
+                <midino>0x6D</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.toggleStemsMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SAMPLER (STEMS: pads 1-4 mute, 5-8 solo, Deck 3 active)</description>
+                <status>0x92</status>
+                <midino>0x6F</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 1 loop, Pad: CUE LOOP 1 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x40</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 1, Pad: SLICER LOOP 1 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x60</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 1 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x70</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 2 loop, Pad: CUE LOOP 2 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x41</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 2, Pad: SLICER LOOP 2 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x61</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 2 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x71</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 3 loop, Pad: CUE LOOP 3 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x42</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 3, Pad: SLICER LOOP 3 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x62</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 3 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x72</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 4 loop, Pad: CUE LOOP 4 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x43</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 4, Pad: SLICER LOOP 4 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x63</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 4 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x73</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 5 loop, Pad: CUE LOOP 5 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x44</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 5, Pad: SLICER LOOP 5 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x64</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 5 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x74</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 6 loop, Pad: CUE LOOP 6 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x45</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 6, Pad: SLICER LOOP 6 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x65</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 6 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x75</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 7 loop, Pad: CUE LOOP 7 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x46</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 7, Pad: SLICER LOOP 7 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x66</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 7 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x76</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 8 loop, Pad: CUE LOOP 8 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x47</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 8, Pad: SLICER LOOP 8 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x67</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel3]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 8 (Deck 3 active)</description>
+                <status>0x99</status>
+                <midino>0x77</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.toggleCueLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + HOT CUE (CUE LOOP, Deck 4 active)</description>
+                <status>0x93</status>
+                <midino>0x69</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.toggleSlicerLoopMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SLICER (SLICER LOOP, Deck 4 active)</description>
+                <status>0x93</status>
+                <midino>0x6D</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.toggleStemsMode</key>
+                <description>Set PAD-Mode, Button: SHIFT + SAMPLER (STEMS: pads 1-4 mute, 5-8 solo, Deck 4 active)</description>
+                <status>0x93</status>
+                <midino>0x6F</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 1 loop, Pad: CUE LOOP 1 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x40</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 1, Pad: SLICER LOOP 1 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x60</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 1 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x70</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 2 loop, Pad: CUE LOOP 2 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x41</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 2, Pad: SLICER LOOP 2 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x61</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 2 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x71</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 3 loop, Pad: CUE LOOP 3 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x42</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 3, Pad: SLICER LOOP 3 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x62</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 3 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x72</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 4 loop, Pad: CUE LOOP 4 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x43</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 4, Pad: SLICER LOOP 4 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x63</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 4 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x73</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 5 loop, Pad: CUE LOOP 5 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x44</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 5, Pad: SLICER LOOP 5 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x64</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 5 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x74</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 6 loop, Pad: CUE LOOP 6 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x45</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 6, Pad: SLICER LOOP 6 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x65</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 6 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x75</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 7 loop, Pad: CUE LOOP 7 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x46</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 7, Pad: SLICER LOOP 7 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x66</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 7 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x76</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.cueLoopButtons</key>
+                <description>Hotcue 8 loop, Pad: CUE LOOP 8 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x47</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.slicerLoopButtons</key>
+                <description>Slicer loop slice 8, Pad: SLICER LOOP 8 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x67</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel4]</group>
+                <key>PioneerDDJSX.stemPadButtons</key>
+                <description>Stem control, Pad: STEMS 8 (Deck 4 active)</description>
+                <status>0x9A</status>
+                <midino>0x77</midino>
                 <options>
                     <script-binding/>
                 </options>

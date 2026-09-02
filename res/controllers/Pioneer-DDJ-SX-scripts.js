@@ -63,6 +63,30 @@ var PioneerDDJSX = function() {};
 ///////////////////////////////////////////////////////////////
 
 // Sets the jogwheels sensitivity. 1 is default, 2 is twice as sensitive, 0.5 is half as sensitive.
+// dj-station: подключение к ControlObject, которого может не быть (иная
+// конфигурация сэмплеров/эффектов, тестовая обвязка без полного движка).
+// Штатный engine.connectControl бросает исключение и роняет весь init().
+PioneerDDJSX.safeConnect = function(group, control, fn, remove) {
+    try {
+        engine.connectControl(group, control, fn, remove);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+// Аналог script.bindConnections, но терпимый к отсутствующим объектам.
+PioneerDDJSX.bindConnections = function(group, controlsToFunctions, remove) {
+    var control;
+    for (control in controlsToFunctions) {
+        if (controlsToFunctions.hasOwnProperty(control)) {
+            if (PioneerDDJSX.safeConnect(group, control, controlsToFunctions[control], remove) && !remove) {
+                engine.trigger(group, control);
+            }
+        }
+    }
+};
+
 PioneerDDJSX.jogwheelSensitivity = 1;
 
 // Sets how much more sensitive the jogwheels get when holding shift.
@@ -94,7 +118,19 @@ PioneerDDJSX.jumpPreviewPosition = 0.3;
 PioneerDDJSX.samplerCueGotoAndPlay = false;
 
 // If true, PFL / Cue (headphone) is being activated by loading a track into certain deck (default: true).
-PioneerDDJSX.autoPFL = true;
+PioneerDDJSX.autoPFL = false;   // dj-setup: загрузка трека больше не выбивает другие деки из наушников
+
+// --- dj-station: навигация по страницам экрана ------------------------
+// Поворот ручки сам открывает BROWSE. Это наше отклонение от Pioneer:
+// у аппаратов Pioneer список открывают кнопкой BROWSE, а ручка только
+// двигает курсор. На DDJ-SX кнопки BROWSE физически нет, поэтому вход
+// сделан ручкой. Когда PANEL SELECT войдёт в привычку - можно выключить.
+PioneerDDJSX.rotaryOpensBrowse = true;
+
+// Экран сам прыгает на PERFORMANCE после загрузки трека в деку 1 или 2 -
+// ровно как у XDJ: "When the track is loaded, the screen switches to the
+// normal playback screen".
+PioneerDDJSX.returnToPerformanceOnLoad = true;
 
 
 ///////////////////////////////////////////////////////////////
@@ -414,6 +450,10 @@ PioneerDDJSX.init = function(id) {
 
     // init effects section:
     PioneerDDJSX.effectUnit = [];
+    // dj-station: без рэка эффектов (тесты, урезанный движок) стандартный
+    // components.EffectUnit.init() бросает исключение. Пусть при этом
+    // отваливается только FX-секция пульта, а не весь контроллер.
+    try {
     PioneerDDJSX.effectUnit[1] = new components.EffectUnit([1, 3]);
     PioneerDDJSX.effectUnit[2] = new components.EffectUnit([2, 4]);
     PioneerDDJSX.effectUnit[1].enableButtons[1].midi = [0x94, PioneerDDJSX.nonPadLeds.fx1on];
@@ -432,6 +472,29 @@ PioneerDDJSX.init = function(id) {
         this.inSetParameter(this.inGetParameter() + PioneerDDJSX.getRotaryDelta(value) / 30);
     };
     PioneerDDJSX.effectUnit[2].init();
+
+    // dj-station: route FX unit 1 -> deck 1 and unit 2 -> deck 2 out of the box.
+    // Stock behaviour leaves every unit unassigned, so pressing FX ON on the
+    // controller changes nothing audible until the DJ also presses the FX1/FX2
+    // ASSIGN button on the channel strip - it reads as "the FX buttons are dead".
+    // The hardware ASSIGN buttons still toggle these, exactly as before.
+    // Явно раскладываем секции по декам: левая FX -> дека 1, правая -> дека 2.
+    // Иначе накопленное с прошлых сессий состояние оставляет обе секции
+    // висящими на обеих деках, и непонятно, что куда льётся.
+    engine.setValue("[EffectRack1_EffectUnit1]", "group_[Channel1]_enable", 1);
+    engine.setValue("[EffectRack1_EffectUnit1]", "group_[Channel2]_enable", 0);
+    engine.setValue("[EffectRack1_EffectUnit2]", "group_[Channel1]_enable", 0);
+    engine.setValue("[EffectRack1_EffectUnit2]", "group_[Channel2]_enable", 1);
+
+    // dj-station: у секции FX должен быть поднят dry/wet, иначе кнопки FX ON
+    // нажимаются и светятся, а звук не меняется - это и читалось как
+    // "эффекты не работают". Глубину дальше задают три ручки LEVEL/DEPTH,
+    // а ручка BEATS двигает этот самый dry/wet.
+    engine.setValue("[EffectRack1_EffectUnit1]", "mix", 1);
+    engine.setValue("[EffectRack1_EffectUnit2]", "mix", 1);
+    } catch (e) {
+        print("PioneerDDJSX: FX section unavailable: " + e);
+    }
 };
 
 PioneerDDJSX.shutdown = function() {
@@ -610,6 +673,9 @@ PioneerDDJSX.autoDJControl = function() {
 ///////////////////////////////////////////////////////////////
 
 PioneerDDJSX.bindDeckControlConnections = function(channelGroup, bind) {
+    // shutdown() может прийти без успешного init() (так делают тестовые
+    // обвязки Mixxx) — тогда таблиц ещё нет, и привязывать нечего.
+    if (!PioneerDDJSX.channelGroups) { return; }
     var i,
         index,
         deck = PioneerDDJSX.channelGroups[channelGroup],
@@ -655,12 +721,12 @@ PioneerDDJSX.bindDeckControlConnections = function(channelGroup, bind) {
         }
     }
 
-    script.bindConnections(channelGroup, controlsToFunctions, !bind);
+    PioneerDDJSX.bindConnections(channelGroup, controlsToFunctions, !bind);
 
     for (index in PioneerDDJSX.fxUnitGroups) {
         if (PioneerDDJSX.fxUnitGroups.hasOwnProperty(index)) {
             if (PioneerDDJSX.fxUnitGroups[index] < 2) {
-                engine.connectControl(index, "group_" + channelGroup + "_enable", "PioneerDDJSX.fxAssignLeds", !bind);
+                PioneerDDJSX.safeConnect(index, "group_" + channelGroup + "_enable", "PioneerDDJSX.fxAssignLeds", !bind);
                 if (bind) {
                     engine.trigger(index, "group_" + channelGroup + "_enable");
                 }
@@ -674,20 +740,26 @@ PioneerDDJSX.bindNonDeckControlConnections = function(bind) {
 
     for (index in PioneerDDJSX.samplerGroups) {
         if (PioneerDDJSX.samplerGroups.hasOwnProperty(index)) {
-            engine.connectControl(index, "duration", "PioneerDDJSX.samplerLeds", !bind);
-            engine.connectControl(index, "play", "PioneerDDJSX.samplerLedsPlay", !bind);
+            PioneerDDJSX.safeConnect(index, "duration", "PioneerDDJSX.samplerLeds", !bind);
+            PioneerDDJSX.safeConnect(index, "play", "PioneerDDJSX.samplerLedsPlay", !bind);
             if (bind) {
                 engine.trigger(index, "duration");
             }
         }
     }
 
-    engine.connectControl("[Master]", "headSplit", "PioneerDDJSX.shiftMasterCueLed", !bind);
+    PioneerDDJSX.safeConnect("[Master]", "headSplit", "PioneerDDJSX.shiftMasterCueLed", !bind);
     if (bind) {
         engine.trigger("[Master]", "headSplit");
     }
 
-    engine.connectControl("[AutoDJ]", "enabled", "PioneerDDJSX.autoDJTimer", !bind);
+    PioneerDDJSX.safeConnect("[AutoDJ]", "enabled", "PioneerDDJSX.autoDJTimer", !bind);
+
+    // Загрузка трека возвращает экран на волну (см. trackLoadedTab).
+    // Деки 3 и 4 не подписываем: их в скине не видно, прыгать ради
+    // невидимой деки смысла нет.
+    PioneerDDJSX.safeConnect("[Channel1]", "track_loaded", "PioneerDDJSX.trackLoadedTab", !bind);
+    PioneerDDJSX.safeConnect("[Channel2]", "track_loaded", "PioneerDDJSX.trackLoadedTab", !bind);
 };
 
 
@@ -697,6 +769,10 @@ PioneerDDJSX.bindNonDeckControlConnections = function(bind) {
 
 PioneerDDJSX.initDeck = function(group) {
     var deck = PioneerDDJSX.channelGroups[group];
+
+    // dj-station: without this the first tempo-fader move after switching the
+    // left deck between DECK 1 and DECK 3 snaps the pitch to the fader position
+    engine.softTakeover(group, "rate", true);
 
     // save set up speed slider range from the Mixxx settings:
     PioneerDDJSX.setUpSpeedSliderRange[deck] = engine.getValue(group, "rateRange");
@@ -835,6 +911,8 @@ PioneerDDJSX.filterHighKnobMSB = function(channel, control, value, status, group
 
 PioneerDDJSX.filterHighKnobLSB = function(channel, control, value, status, group) {
     var fullValue = (PioneerDDJSX.highResMSB[group].filterHigh << 7) + value;
+    // in STEMS pad mode this knob is a stem fader, not EQ (see STEMS block)
+    if (PioneerDDJSX.stemKnobIntercept("high", group, fullValue >> 7)) { return; }
     engine.setParameter("[EqualizerRack1_" + group + "_Effect1]", "parameter3", fullValue / 0x3FFF);
 };
 
@@ -844,6 +922,7 @@ PioneerDDJSX.filterMidKnobMSB = function(channel, control, value, status, group)
 
 PioneerDDJSX.filterMidKnobLSB = function(channel, control, value, status, group) {
     var fullValue = (PioneerDDJSX.highResMSB[group].filterMid << 7) + value;
+    if (PioneerDDJSX.stemKnobIntercept("mid", group, fullValue >> 7)) { return; }
     engine.setParameter("[EqualizerRack1_" + group + "_Effect1]", "parameter2", fullValue / 0x3FFF);
 };
 
@@ -853,6 +932,7 @@ PioneerDDJSX.filterLowKnobMSB = function(channel, control, value, status, group)
 
 PioneerDDJSX.filterLowKnobLSB = function(channel, control, value, status, group) {
     var fullValue = (PioneerDDJSX.highResMSB[group].filterLow << 7) + value;
+    if (PioneerDDJSX.stemKnobIntercept("low", group, fullValue >> 7)) { return; }
     engine.setParameter("[EqualizerRack1_" + group + "_Effect1]", "parameter1", fullValue / 0x3FFF);
 };
 
@@ -946,22 +1026,12 @@ PioneerDDJSX.shiftButton = function(channel, control, value, status, group) {
 };
 
 PioneerDDJSX.playButton = function(channel, control, value, status, group) {
-    var deck = PioneerDDJSX.channelGroups[group],
-        playing = engine.getValue(group, "play");
-
+    // Штатный скрипт вешал на нажатие script.brake() (торможение как у
+    // винила), а собственно паузу — на ОТПУСКАНИЕ. Из-за этого кнопку
+    // приходилось зажимать, а трек уезжал к точке cue. Делаем обычный
+    // play/pause по нажатию: нажал — играет, нажал — стоит на месте.
     if (value) {
-        if (playing) {
-            script.brake(channel, control, value, status, group);
-            PioneerDDJSX.toggledBrake[deck] = true;
-        } else {
-            script.toggleControl(group, "play");
-        }
-    } else {
-        if (PioneerDDJSX.toggledBrake[deck]) {
-            script.brake(channel, control, value, status, group);
-            script.toggleControl(group, "play");
-            PioneerDDJSX.toggledBrake[deck] = false;
-        }
+        script.toggleControl(group, "play");
     }
 };
 
@@ -996,6 +1066,7 @@ PioneerDDJSX.headphoneSplitCueButton = function(channel, control, value, status,
 };
 
 PioneerDDJSX.toggleHotCueMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
     var deck = PioneerDDJSX.channelGroups[group];
     //HOTCUE
     if (value) {
@@ -1006,6 +1077,7 @@ PioneerDDJSX.toggleHotCueMode = function(channel, control, value, status, group)
 };
 
 PioneerDDJSX.toggleBeatloopRollMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
     var deck = PioneerDDJSX.channelGroups[group];
     //ROLL
     if (value) {
@@ -1016,6 +1088,7 @@ PioneerDDJSX.toggleBeatloopRollMode = function(channel, control, value, status, 
 };
 
 PioneerDDJSX.toggleSlicerMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
     var deck = PioneerDDJSX.channelGroups[group];
     //SLICER
     if (value) {
@@ -1033,6 +1106,7 @@ PioneerDDJSX.toggleSlicerMode = function(channel, control, value, status, group)
 };
 
 PioneerDDJSX.toggleSamplerMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
     var deck = PioneerDDJSX.channelGroups[group];
     //SAMPLER
     if (value) {
@@ -1059,6 +1133,7 @@ PioneerDDJSX.toggleSamplerVelocityMode = function(channel, control, value, statu
 };
 
 PioneerDDJSX.toggleBeatloopMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
     var deck = PioneerDDJSX.channelGroups[group];
     //GROUP2
     if (value) {
@@ -1209,7 +1284,7 @@ PioneerDDJSX.changeParameters = function(group, ctrl, value) {
         // unbind previous connected controls:
         for (index in PioneerDDJSX.selectedLooprollIntervals[deck]) {
             if (PioneerDDJSX.selectedLooprollIntervals[deck].hasOwnProperty(index)) {
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     group,
                     "beatlooproll_" + PioneerDDJSX.selectedLooprollIntervals[deck][index] + "_activate",
                     "PioneerDDJSX.beatlooprollLeds",
@@ -1227,7 +1302,7 @@ PioneerDDJSX.changeParameters = function(group, ctrl, value) {
         // bind new controls:
         for (index in PioneerDDJSX.selectedLooprollIntervals[deck]) {
             if (PioneerDDJSX.selectedLooprollIntervals[deck].hasOwnProperty(index)) {
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     group,
                     "beatlooproll_" + PioneerDDJSX.selectedLooprollIntervals[deck][index] + "_activate",
                     "PioneerDDJSX.beatlooprollLeds",
@@ -1242,7 +1317,7 @@ PioneerDDJSX.changeParameters = function(group, ctrl, value) {
         // unbind previous connected controls:
         for (index in PioneerDDJSX.selectedLoopIntervals[deck]) {
             if (PioneerDDJSX.selectedLoopIntervals[deck].hasOwnProperty(index)) {
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     group,
                     "beatloop_" + PioneerDDJSX.selectedLoopIntervals[deck][index] + "_enabled",
                     "PioneerDDJSX.beatloopLeds",
@@ -1260,7 +1335,7 @@ PioneerDDJSX.changeParameters = function(group, ctrl, value) {
         // bind new controls:
         for (index in PioneerDDJSX.selectedLoopIntervals[deck]) {
             if (PioneerDDJSX.selectedLoopIntervals[deck].hasOwnProperty(index)) {
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     group,
                     "beatloop_" + PioneerDDJSX.selectedLoopIntervals[deck][index] + "_enabled",
                     "PioneerDDJSX.beatloopLeds",
@@ -1277,13 +1352,13 @@ PioneerDDJSX.changeParameters = function(group, ctrl, value) {
             if (PioneerDDJSX.samplerGroups.hasOwnProperty(index)) {
                 offset = PioneerDDJSX.selectedSamplerBank * 8;
                 samplerIndex = (PioneerDDJSX.samplerGroups[index] + 1) + offset;
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     "[Sampler" + samplerIndex + "]",
                     "duration",
                     "PioneerDDJSX.samplerLeds",
                     true
                 );
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     "[Sampler" + samplerIndex + "]",
                     "play",
                     "PioneerDDJSX.samplerLedsPlay",
@@ -1302,13 +1377,13 @@ PioneerDDJSX.changeParameters = function(group, ctrl, value) {
             if (PioneerDDJSX.samplerGroups.hasOwnProperty(index)) {
                 offset = PioneerDDJSX.selectedSamplerBank * 8;
                 samplerIndex = (PioneerDDJSX.samplerGroups[index] + 1) + offset;
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     "[Sampler" + samplerIndex + "]",
                     "duration",
                     "PioneerDDJSX.samplerLeds",
                     false
                 );
-                engine.connectControl(
+                PioneerDDJSX.safeConnect(
                     "[Sampler" + samplerIndex + "]",
                     "play",
                     "PioneerDDJSX.samplerLedsPlay",
@@ -1579,7 +1654,7 @@ PioneerDDJSX.shiftPanelSelectButton = function(channel, control, value, status, 
             if (PioneerDDJSX.fxUnitGroups[index] < 2) {
                 for (channelGroup in PioneerDDJSX.channelGroups) {
                     if (PioneerDDJSX.channelGroups.hasOwnProperty(channelGroup)) {
-                        engine.connectControl(index, "group_" + channelGroup + "_enable", "PioneerDDJSX.fxAssignLeds", value);
+                        PioneerDDJSX.safeConnect(index, "group_" + channelGroup + "_enable", "PioneerDDJSX.fxAssignLeds", value);
                         if (value) {
                             engine.trigger(index, "group_" + channelGroup + "_enable");
                         }
@@ -1589,7 +1664,7 @@ PioneerDDJSX.shiftPanelSelectButton = function(channel, control, value, status, 
             if (PioneerDDJSX.fxUnitGroups[index] >= 2) {
                 for (channelGroup in PioneerDDJSX.channelGroups) {
                     if (PioneerDDJSX.channelGroups.hasOwnProperty(channelGroup)) {
-                        engine.connectControl(index, "group_" + channelGroup + "_enable", "PioneerDDJSX.fxAssignLeds", !value);
+                        PioneerDDJSX.safeConnect(index, "group_" + channelGroup + "_enable", "PioneerDDJSX.fxAssignLeds", !value);
                         if (value) {
                             engine.trigger(index, "group_" + channelGroup + "_enable");
                         } else {
@@ -2181,7 +2256,88 @@ PioneerDDJSX.pitchBendFromJog = function(group, movement) {
 //             ROTARY SELECTOR & NAVIGATION BUTTONS          //
 ///////////////////////////////////////////////////////////////
 
+// Страницы нашего скина в WidgetStack: 0 PERFORMANCE, 1 BROWSE, 2 SAMPLER, 3 MENU.
+// Писать ТОЛЬКО в [Tab],current. Отдельные [Tab],overview/library/... трогать
+// нельзя: у [Tab],overview в skin.xml нет on_hide_select, и сброс его в 0 при
+// активной первой странице утащит экран на вторую.
+PioneerDDJSX.tabPages = {performance: 0, browse: 1, sampler: 2, menu: 3};
+PioneerDDJSX.tabPageCount = 4;
+PioneerDDJSX.lastTabPage = 1;   // куда возвращаться тумблером с PERFORMANCE
+
+// значение приходит как double - округляем, иначе сравнения врут
+PioneerDDJSX.getTabPage = function() {
+    return Math.round(engine.getValue("[Tab]", "current"));
+};
+
+PioneerDDJSX.goToPerformance = function() {
+    engine.setValue("[Tab]", "current", PioneerDDJSX.tabPages.performance);
+};
+
+// Открыть список. Вызывается с поворота ручки и кнопок навигации.
+// На чужом скине группы [Tab] нет - вызов просто молчит в журнал.
+PioneerDDJSX.LIBRARY_FOCUS_SIDEBAR = 2; // FocusWidget::Sidebar
+PioneerDDJSX.LIBRARY_FOCUS_TRACKS = 3;  // FocusWidget::TracksTable
+
+// Вернуть фокус на список треков силой.
+//
+// Mixxx хранит "кто в фокусе" отдельным значением и при установке того же
+// значения не делает НИЧЕГО. После ухода на Performance и обратно там остаётся
+// "список треков" с прошлого раза, хотя настоящий фокус окна уже не там — и
+// прокрутка молчит, пока не ткнёшь в список пальцем. Поэтому сначала уводим
+// фокус на дерево слева, а потом возвращаем: тогда значение действительно
+// меняется и Mixxx выполняет установку.
+PioneerDDJSX.focusTrackList = function() {
+    engine.setValue("[Library]", "focused_widget",
+        PioneerDDJSX.LIBRARY_FOCUS_SIDEBAR);
+    engine.setValue("[Library]", "focused_widget",
+        PioneerDDJSX.LIBRARY_FOCUS_TRACKS);
+};
+
+PioneerDDJSX.showBrowsePage = function() {
+    if (!PioneerDDJSX.rotaryOpensBrowse) { return; }
+    if (PioneerDDJSX.getTabPage() !== PioneerDDJSX.tabPages.browse) {
+        engine.setValue("[Tab]", "current", PioneerDDJSX.tabPages.browse);
+        // Страница только что показана — фокус наверняка не на списке.
+        PioneerDDJSX.focusTrackList();
+    }
+};
+
+// PANEL SELECT = пионеровский тумблер BROWSE: увёл на PERFORMANCE и вернул
+// обратно ровно туда, где стоял, вместе с позицией курсора в списке
+// (WidgetStack страницу не уничтожает, а прячет).
+PioneerDDJSX.tabToggleButton = function(channel, control, value, status, group) {
+    if (!value) { return; }   // иначе note-off переключит страницу второй раз
+    var page = PioneerDDJSX.getTabPage();
+    if (page !== PioneerDDJSX.tabPages.performance) {
+        PioneerDDJSX.lastTabPage = page;
+        PioneerDDJSX.goToPerformance();
+    } else {
+        engine.setValue("[Tab]", "current",
+            PioneerDDJSX.lastTabPage || PioneerDDJSX.tabPages.browse);
+    }
+};
+
+// SHIFT + BACK, на корпусе подписано VIEW. У Serato это перебор вариантов
+// отображения по кругу - у нас круг из четырёх страниц. Единственный способ
+// добраться с контроллера до SAMPLER и MENU.
+PioneerDDJSX.tabCycleButton = function(channel, control, value, status, group) {
+    if (!value) { return; }
+    engine.setValue("[Tab]", "current",
+        (PioneerDDJSX.getTabPage() + 1) % PioneerDDJSX.tabPageCount);
+};
+
+// Загрузка трека возвращает на волну - как у XDJ. Сделано подпиской, а не в
+// обработчике кнопки LOAD: на планшете грузят и пальцем по экранным LOAD, и
+// нажатием ручки, подписка ловит все способы сразу. Выгрузка тоже шлёт
+// событие, но со значением 0 - поэтому проверка на value обязательна.
+PioneerDDJSX.trackLoadedTab = function(value, group, control) {
+    if (!value) { return; }
+    if (!PioneerDDJSX.returnToPerformanceOnLoad) { return; }
+    PioneerDDJSX.goToPerformance();
+};
+
 PioneerDDJSX.loadPrepareButton = function(channel, control, value, status) {
+    PioneerDDJSX.showBrowsePage();
     if (PioneerDDJSX.rotarySelectorChanged === true) {
         if (value) {
             engine.setValue("[PreviewDeck1]", "LoadSelectedTrackAndPlay", true);
@@ -2203,13 +2359,14 @@ PioneerDDJSX.loadPrepareButton = function(channel, control, value, status) {
 };
 
 PioneerDDJSX.backButton = function(channel, control, value, status) {
+    PioneerDDJSX.showBrowsePage();
     script.toggleControl("[Library]", "MoveFocusBackward");
 };
 
-PioneerDDJSX.shiftBackButton = function(channel, control, value, status) {
-    if (value) {
-        script.toggleControl("[Skin]", "show_maximized_library");
-    }
+// SHIFT + BACK. На корпусе это VIEW - у Serato кнопка перебирает виды
+// отображения по кругу. У нас круг из четырёх страниц экрана.
+PioneerDDJSX.shiftBackButton = function(channel, control, value, status, group) {
+    PioneerDDJSX.tabCycleButton(channel, control, value, status, group);
 };
 
 PioneerDDJSX.getRotaryDelta = function(value) {
@@ -2225,6 +2382,7 @@ PioneerDDJSX.getRotaryDelta = function(value) {
 PioneerDDJSX.rotarySelector = function(channel, control, value, status) {
     var delta = PioneerDDJSX.getRotaryDelta(value);
 
+    PioneerDDJSX.showBrowsePage();
     engine.setValue("[Library]", "MoveVertical", delta);
     PioneerDDJSX.rotarySelectorChanged = true;
 };
@@ -2233,6 +2391,7 @@ PioneerDDJSX.rotarySelectorShifted = function(channel, control, value, status) {
     var delta = PioneerDDJSX.getRotaryDelta(value),
         f = (delta > 0 ? "SelectNextPlaylist" : "SelectPrevPlaylist");
 
+    PioneerDDJSX.showBrowsePage();
     engine.setValue("[Library]", "MoveHorizontal", delta);
 };
 
@@ -2332,3 +2491,301 @@ PioneerDDJSX.slicerBeatActive = function(value, group, control) {
         PioneerDDJSX.slicerActive[deck] = false;
     }
 };
+
+/* ------------------------------------------------------------------------
+   dj-station fork: revive the three dead SHIFT pad modes.
+
+   Stock mapping leaves SHIFT+HOT CUE (0x69), SHIFT+SLICER (0x6D) and
+   SHIFT+SAMPLER (0x6F) unbound: the controller silently switches its pad
+   bank, Mixxx never hears the pads and the whole row goes dark until the
+   DJ presses HOT CUE again. See docs/LESSONS.md #9.
+
+   Banks used by those modes (status 0x97 + deck):
+     0x40-0x47  CUE LOOP          -> hotcue_N_activateloop
+     0x60-0x67  SLICER LOOP       -> existing slicer engine in loopSlice mode
+     0x70-0x77  VELOCITY SAMPLER  -> sampler with volume taken from velocity
+   padModes.group1/group3/group4 and ledGroups.group1/group3/group4 were
+   already reserved for exactly these banks by the original author.
+   ------------------------------------------------------------------------ */
+
+PioneerDDJSX.toggleCueLoopMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
+    var deck = PioneerDDJSX.channelGroups[group];
+    if (value) {
+        PioneerDDJSX.activePadMode[deck] = PioneerDDJSX.padModes.group1;
+        PioneerDDJSX.activeSlicerMode[deck] = PioneerDDJSX.slicerModes.contSlice;
+        PioneerDDJSX.nonPadLedControl(group, PioneerDDJSX.nonPadLeds.shiftHotCueMode, true);
+    }
+};
+
+PioneerDDJSX.cueLoopButtons = function(channel, control, value, status, group) {
+    var index = (control - PioneerDDJSX.ledGroups.group1) + 1;
+    // activateloop jumps to the hotcue and loops there; on an unset hotcue it
+    // stores a loop cue at the current position, which is our stand-in for
+    // rekordbox saved loops (Mixxx has no memory-cue entity).
+    engine.setValue(group, "hotcue_" + index + "_activateloop", value ? 1 : 0);
+    PioneerDDJSX.padLedControl(group, PioneerDDJSX.ledGroups.group1, index - 1, false, value ? true : false);
+};
+
+PioneerDDJSX.toggleSlicerLoopMode = function(channel, control, value, status, group) {
+    PioneerDDJSX.stemLeaveMode(group);
+    var deck = PioneerDDJSX.channelGroups[group];
+    if (value) {
+        PioneerDDJSX.activePadMode[deck] = PioneerDDJSX.padModes.group3;
+        PioneerDDJSX.activeSlicerMode[deck] = PioneerDDJSX.slicerModes.loopSlice;
+        engine.setValue(group, "slip_enabled", true);
+        PioneerDDJSX.nonPadLedControl(group, PioneerDDJSX.nonPadLeds.shiftSlicerMode, true);
+    }
+};
+
+PioneerDDJSX.slicerLoopButtons = function(channel, control, value, status, group) {
+    // reuse the stock slicer engine by shifting bank 0x60 down onto 0x20
+    PioneerDDJSX.slicerButtons(channel,
+        control - (PioneerDDJSX.ledGroups.group3 - PioneerDDJSX.ledGroups.slicer),
+        value, status, group);
+    PioneerDDJSX.padLedControl(group, PioneerDDJSX.ledGroups.group3,
+        control - PioneerDDJSX.ledGroups.group3, false, value ? true : false);
+};
+
+PioneerDDJSX.toggleVelocitySamplerMode = function(channel, control, value, status, group) {
+    var deck = PioneerDDJSX.channelGroups[group];
+    if (value) {
+        PioneerDDJSX.activePadMode[deck] = PioneerDDJSX.padModes.group4;
+        PioneerDDJSX.activeSlicerMode[deck] = PioneerDDJSX.slicerModes.contSlice;
+        PioneerDDJSX.nonPadLedControl(group, PioneerDDJSX.nonPadLeds.shiftSamplerMode, true);
+    }
+};
+
+PioneerDDJSX.velocitySamplerButtons = function(channel, control, value, status, group) {
+    var index = (control - PioneerDDJSX.ledGroups.group4) + 1,
+        deckOffset = PioneerDDJSX.selectedSamplerBank * 8,
+        sampleDeck = "[Sampler" + (index + deckOffset) + "]",
+        playMode = PioneerDDJSX.samplerCueGotoAndPlay ? "cue_gotoandplay" : "start_play";
+
+    if (engine.getValue(sampleDeck, "track_loaded")) {
+        if (value) {
+            // volume follows how hard the pad was hit (this is the whole point
+            // of the mode); stays where it was until the next hit
+            engine.setParameter(sampleDeck, "volume", value / 127);
+            engine.setValue(sampleDeck, playMode, 1);
+        } else {
+            engine.setValue(sampleDeck, playMode, 0);
+        }
+    } else {
+        engine.setValue(sampleDeck, "LoadSelectedTrack", value ? 1 : 0);
+    }
+    PioneerDDJSX.padLedControl(group, PioneerDDJSX.ledGroups.group4, index - 1, false, value ? true : false);
+};
+
+/* =====================================================================
+   STEMS (Mixxx 2.6+ only). Two layers, on purpose:
+
+     PADS  - coarse. SHIFT+SAMPLER selects the STEMS pad bank:
+             pads 1-4 = mute/unmute stem 1..4
+             pads 5-8 = solo stem 1..4 (everything else muted)
+
+     KNOBS - fine, the reason this exists at all. While a deck is in the
+             STEMS pad bank, its EQ knobs stop being EQ and become stem
+             faders, so you can dial a mashup by taste instead of hard
+             on/off:
+               HIGH -> vocals        MID -> instruments (other)
+               LOW  -> drums + bass (the low end moves together)
+
+             Law of each knob, centre-detented:
+               centre (12 o'clock) - normal mix, nothing touched
+               turn CCW to 7        - THIS stem fades out to silence
+               turn CW  to 5        - the OTHER stems fade out, so at the
+                                      end only this one plays (solo)
+             So HIGH fully CW = acapella, HIGH fully CCW = instrumental,
+             MID fully CW = instruments only. To swap which side removes
+             what, flip STEM_KNOB_INVERT below.
+
+   Everything is guarded: on Mixxx 2.5 (no stems) and on ordinary tracks
+   these functions do nothing. Touching [ChannelN_StemM] when it does not
+   exist kills the whole controller script engine - learned the hard way.
+   ===================================================================== */
+
+PioneerDDJSX.STEM_KNOB_INVERT = false;   // true = CW removes the stem instead of soloing it
+
+// which stems each EQ knob owns (NI order: 1 drums, 2 bass, 3 other, 4 vocals)
+PioneerDDJSX.stemKnobMap = {
+    'high': [4],
+    'mid':  [3],
+    'low':  [1, 2]
+};
+
+PioneerDDJSX.stemModeActive = [false, false, false, false];
+
+PioneerDDJSX.stemGroup = function(group, index) {
+    return "[" + group.substring(1, group.length - 1) + "_Stem" + index + "]";
+};
+
+// true only when this deck really holds a stem track on a Mixxx that has stems
+PioneerDDJSX.deckHasStems = function(group) {
+    try {
+        return engine.getValue(group, "stem_count") >= 4;
+    } catch (e) {
+        return false;
+    }
+};
+
+PioneerDDJSX.stemSet = function(group, index, control, value) {
+    try {
+        engine.setValue(PioneerDDJSX.stemGroup(group, index), control, value);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+PioneerDDJSX.stemGet = function(group, index, control, fallback) {
+    try {
+        var v = engine.getValue(PioneerDDJSX.stemGroup(group, index), control);
+        return (v === undefined || v === null) ? fallback : v;
+    } catch (e) {
+        return fallback;
+    }
+};
+
+/* ---------- pad bank: coarse mute / solo ---------- */
+
+PioneerDDJSX.toggleStemsMode = function(channel, control, value, status, group) {
+    var deck = PioneerDDJSX.channelGroups[group];
+    if (!value) { return; }
+    PioneerDDJSX.activePadMode[deck] = PioneerDDJSX.padModes.group4;
+    PioneerDDJSX.activeSlicerMode[deck] = PioneerDDJSX.slicerModes.contSlice;
+    PioneerDDJSX.stemModeActive[deck] = true;
+    PioneerDDJSX.nonPadLedControl(group, PioneerDDJSX.nonPadLeds.shiftSamplerMode, true);
+    PioneerDDJSX.stemRefreshPadLeds(group);
+};
+
+// Аварийный сброс: нажатие ЛЮБОЙ другой кнопки режима пэдов (проще всего
+// HOT CUE) возвращает все дорожки к нормальной громкости и снимает mute.
+// Нужно потому, что тремя ручками легко довести трек до полной тишины, и
+// без этого пришлось бы вручную вылавливать центр каждой ручки.
+PioneerDDJSX.stemLeaveMode = function(group) {
+    var deck = PioneerDDJSX.channelGroups[group], s;
+    PioneerDDJSX.stemModeActive[deck] = false;
+    PioneerDDJSX.stemKnobPos[deck] = {};
+    if (!PioneerDDJSX.deckHasStems(group)) { return; }
+    for (s = 1; s <= 4; s++) {
+        PioneerDDJSX.stemSet(group, s, "volume", 1);
+        PioneerDDJSX.stemSet(group, s, "mute", 0);
+    }
+};
+
+PioneerDDJSX.stemRefreshPadLeds = function(group) {
+    if (!PioneerDDJSX.deckHasStems(group)) { return; }
+    for (var i = 1; i <= 4; i++) {
+        var muted = PioneerDDJSX.stemGet(group, i, "mute", 0);
+        // top row lit = stem audible, bottom row is the solo trigger
+        PioneerDDJSX.padLedControl(group, PioneerDDJSX.ledGroups.group4, i - 1, false, !muted);
+        PioneerDDJSX.padLedControl(group, PioneerDDJSX.ledGroups.group4, i + 3, false, false);
+    }
+};
+
+PioneerDDJSX.stemPadButtons = function(channel, control, value, status, group) {
+    if (!value) { return; }
+    if (!PioneerDDJSX.deckHasStems(group)) { return; }
+
+    var pad = control - PioneerDDJSX.ledGroups.group4;   // 0..7
+    var i;
+
+    if (pad < 4) {
+        // pads 1-4: plain mute toggle
+        var idx = pad + 1;
+        PioneerDDJSX.stemSet(group, idx, "mute",
+            PioneerDDJSX.stemGet(group, idx, "mute", 0) ? 0 : 1);
+    } else {
+        // pads 5-8: solo this stem
+        var solo = pad - 4 + 1;
+        for (i = 1; i <= 4; i++) {
+            PioneerDDJSX.stemSet(group, i, "mute", (i === solo) ? 0 : 1);
+        }
+    }
+    PioneerDDJSX.stemRefreshPadLeds(group);
+};
+
+/* ---------- EQ knobs as stem faders ---------- */
+
+// Позиция каждой ручки помнится отдельно, иначе три ручки затирают друг друга:
+// раньше каждая выставляла громкость ВСЕМ четырём дорожкам, и последняя
+// тронутая отменяла решения предыдущих. Теперь по любому движению
+// пересчитываются все дорожки сразу из трёх запомненных положений.
+PioneerDDJSX.stemKnobPos = [{}, {}, {}, {}];   // на деку: {high, mid, low} в -1..+1
+
+PioneerDDJSX.stemKnobNorm = function(midiValue) {
+    var centre = 64;
+    if (midiValue < centre) { return -((centre - midiValue) / centre); }      // -1..0 против часовой
+    if (midiValue > centre) { return (midiValue - centre) / (127 - centre); } // 0..+1 по часовой
+    return 0;
+};
+
+PioneerDDJSX.stemKnob = function(band, group, midiValue) {
+    var deck = PioneerDDJSX.channelGroups[group],
+        pos = PioneerDDJSX.stemKnobPos[deck],
+        bands = ["high", "mid", "low"],
+        own = {}, solo = {}, b, i, j, s, othersSolo, owner;
+
+    pos[band] = PioneerDDJSX.stemKnobNorm(midiValue);
+    if (PioneerDDJSX.STEM_KNOB_INVERT) { pos[band] = -pos[band]; }
+
+    // против часовой — своя дорожка уходит в ноль; по часовой — солирует
+    for (i = 0; i < bands.length; i++) {
+        b = bands[i];
+        var p = (pos[b] === undefined) ? 0 : pos[b];
+        own[b]  = 1 + Math.min(p, 0);
+        solo[b] = Math.max(p, 0);
+    }
+
+    for (s = 1; s <= 4; s++) {
+        owner = null;
+        for (i = 0; i < bands.length; i++) {
+            var list = PioneerDDJSX.stemKnobMap[bands[i]];
+            for (j = 0; j < list.length; j++) { if (list[j] === s) { owner = bands[i]; } }
+        }
+        if (owner === null) { continue; }
+
+        othersSolo = 0;
+        for (i = 0; i < bands.length; i++) {
+            if (bands[i] !== owner && solo[bands[i]] > othersSolo) { othersSolo = solo[bands[i]]; }
+        }
+        PioneerDDJSX.stemSet(group, s, "volume", own[owner] * (1 - othersSolo));
+    }
+};
+
+// Called from the existing EQ knob handlers. Returns true when it consumed the
+// knob, so the caller leaves the real EQ alone.
+PioneerDDJSX.stemKnobIntercept = function(band, group, midiValue) {
+    // No mode to remember and no button to press: if the deck holds a stem
+    // track the EQ knobs ARE the stem faders, otherwise they stay plain EQ.
+    // The DJ just loads a track and it behaves correctly.
+    if (!PioneerDDJSX.deckHasStems(group)) { return false; }
+    PioneerDDJSX.stemKnob(band, group, midiValue);
+    return true;
+};
+
+/* ---------- one-off capability self-test, logged once per load ---------- */
+
+PioneerDDJSX.stemSelfTest = function(group) {
+    var g = PioneerDDJSX.stemGroup(group, 1),
+        report = "STEMCAP " + g;
+    try {
+        report += " stem_count=" + engine.getValue(group, "stem_count");
+    } catch (e) { report += " stem_count=ERR"; }
+    var probes = ["volume", "mute", "orientation", "pregain"];
+    for (var i = 0; i < probes.length; i++) {
+        try {
+            var v = engine.getValue(g, probes[i]);
+            report += " " + probes[i] + "=" + v;
+        } catch (e) {
+            report += " " + probes[i] + "=ERR";
+        }
+    }
+    console.log(report);
+};
+
+/* Per-stem controls confirmed against the Mixxx source (enginedeck.cpp):
+   each [ChannelN_StemM] exposes exactly "volume" and "mute" - no orientation,
+   no pregain. This layer uses both and nothing else. */
+console.log("STEMS layer loaded");

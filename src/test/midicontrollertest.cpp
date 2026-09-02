@@ -4,6 +4,11 @@
 
 #include "control/controlpotmeter.h"
 #include "control/controlpushbutton.h"
+#include <QDir>
+#include <QFileInfo>
+
+#include "control/controlobject.h"
+#include "controllers/legacycontrollermappingfilehandler.h"
 #include "controllers/midi/legacymidicontrollermapping.h"
 #include "controllers/midi/midicontroller.h"
 #include "controllers/midi/midimessage.h"
@@ -28,6 +33,11 @@ class MockMidiController : public MidiController {
                     unsigned char byte2));
     MOCK_METHOD1(sendBytes, bool(const QByteArray& data));
     MOCK_CONST_METHOD0(isPolling, bool());
+
+    // dj-station: загрузить скрипты маппинга так же, как это делает приложение.
+    bool applyMappingForTest(const QString& resourcePath) {
+        return applyMapping(resourcePath);
+    }
 
     PhysicalTransportProtocol getPhysicalTransportProtocol() const override {
         return PhysicalTransportProtocol::UNKNOWN;
@@ -689,4 +699,108 @@ TEST_F(MidiControllerTest, JSInputHandler_ErrorWhenStatusIsTooSmall) {
             "midi.makeInputHandler(0x7F, 0x00, (channel, control, value, status) => {})");
     ASSERT_TRUE(isError);
     EXPECT_EQ(getInputMappingCount(), 0);
+}
+
+// ── dj-station: маппинг станции для DDJ-SX ───────────────────────────────────
+// Проверяем не «маппинг загружается» (это делает валидатор), а то, что
+// нажатие конкретной кнопки меняет конкретный ControlObject. Без пульта:
+// MIDI-байты подаются прямо в контроллер.
+
+namespace {
+
+std::shared_ptr<LegacyMidiControllerMapping> loadStationMapping() {
+    auto pMapping = LegacyControllerMappingFileHandler::loadMapping(
+            QFileInfo(QStringLiteral(RESOURCE_FOLDER "/controllers/Pioneer DDJ-SX.midi.xml")),
+            QDir(QStringLiteral(RESOURCE_FOLDER "/controllers")));
+    return std::dynamic_pointer_cast<LegacyMidiControllerMapping>(pMapping);
+}
+
+// Коды из "Pioneer DDJ-SX.midi.xml" (дека 1)
+constexpr unsigned char kPlayStatus = 0x90;
+constexpr unsigned char kPlayNote = 0x0B;
+constexpr unsigned char kCc = 0xB0;
+constexpr unsigned char kHighMsb = 0x07;
+constexpr unsigned char kHighLsb = 0x27;
+constexpr unsigned char kMidMsb = 0x0B;
+constexpr unsigned char kMidLsb = 0x2B;
+
+} // namespace
+
+class StationMappingTest : public MidiControllerTest {
+  protected:
+    void SetUp() override {
+        MidiControllerTest::SetUp();
+        m_pPlay = std::make_unique<ControlPushButton>(ConfigKey("[Channel1]", "play"));
+        m_pStemCount = std::make_unique<ControlObject>(ConfigKey("[Channel1]", "stem_count"));
+        for (int i = 0; i < 4; i++) {
+            const QString group = QStringLiteral("[Channel1_Stem%1]").arg(i + 1);
+            m_stemVolume[i] = std::make_unique<ControlPotmeter>(ConfigKey(group, "volume"), 0.0, 1.0);
+            m_stemVolume[i]->set(1.0);
+            m_stemMute[i] = std::make_unique<ControlPushButton>(ConfigKey(group, "mute"));
+        }
+        auto pMapping = loadStationMapping();
+        ASSERT_NE(pMapping, nullptr) << "маппинг станции не загрузился из res/controllers";
+        m_pController->setMapping(pMapping);
+        // Базовая фикстура уже подняла движок скриптов без маппинга, а
+        // повторный initialize() по замыслу возвращает false. Останавливаем
+        // и поднимаем заново уже с нашими скриптами — как делает приложение.
+        shutdownController();
+        ASSERT_TRUE(m_pController->applyMappingForTest(QStringLiteral(RESOURCE_FOLDER)))
+                << "скрипт маппинга не инициализировался";
+    }
+
+    void TearDown() override {
+        // Контроллер живёт в базовом классе и гибнет ПОСЛЕ наших ControlObject'ов;
+        // shutdown() скрипта при этом трогает уже мёртвые объекты. Останавливаем
+        // движок, пока всё живо, — в приложении порядок такой же.
+        shutdownController();
+        MidiControllerTest::TearDown();
+    }
+
+    void knob(unsigned char msb, unsigned char lsb, unsigned char value7) {
+        // Ручки DDJ-SX 14-битные: сначала старший байт, потом младший.
+        receivedShortMessage(kCc, msb, value7);
+        receivedShortMessage(kCc, lsb, 0x00);
+    }
+
+    std::unique_ptr<ControlPushButton> m_pPlay;
+    std::unique_ptr<ControlObject> m_pStemCount;
+    std::unique_ptr<ControlPotmeter> m_stemVolume[4];
+    std::unique_ptr<ControlPushButton> m_stemMute[4];
+};
+
+TEST_F(StationMappingTest, StationMapping_PlayButtonToggles) {
+    EXPECT_DOUBLE_EQ(m_pPlay->get(), 0.0);
+    receivedShortMessage(kPlayStatus, kPlayNote, 0x7F);
+    EXPECT_DOUBLE_EQ(m_pPlay->get(), 1.0) << "нажатие PLAY не запустило деку";
+    receivedShortMessage(kPlayStatus, kPlayNote, 0x00); // отпускание не должно ничего менять
+    EXPECT_DOUBLE_EQ(m_pPlay->get(), 1.0) << "отпускание PLAY остановило деку";
+    receivedShortMessage(kPlayStatus, kPlayNote, 0x7F);
+    EXPECT_DOUBLE_EQ(m_pPlay->get(), 0.0) << "второе нажатие PLAY не поставило паузу";
+}
+
+TEST_F(StationMappingTest, StationMapping_HighKnobDrivesVocalStem) {
+    m_pStemCount->set(4.0);
+    knob(kHighMsb, kHighLsb, 0x00); // до упора влево — вокал убран
+    EXPECT_NEAR(m_stemVolume[3]->get(), 0.0, 0.05) << "HIGH влево не убрал вокал";
+    EXPECT_NEAR(m_stemVolume[0]->get(), 1.0, 0.05) << "ударные не должны были измениться";
+    knob(kHighMsb, kHighLsb, 0x40); // центр — обычный микс
+    EXPECT_NEAR(m_stemVolume[3]->get(), 1.0, 0.05) << "HIGH в центре не вернул вокал";
+}
+
+TEST_F(StationMappingTest, StationMapping_MidKnobRightSolosInstruments) {
+    m_pStemCount->set(4.0);
+    knob(kMidMsb, kMidLsb, 0x7F); // до упора вправо — соло инструментов
+    EXPECT_NEAR(m_stemVolume[2]->get(), 1.0, 0.05) << "инструменты при соло должны звучать";
+    EXPECT_NEAR(m_stemVolume[3]->get(), 0.0, 0.05) << "вокал при соло инструментов должен уйти";
+    EXPECT_NEAR(m_stemVolume[0]->get(), 0.0, 0.05) << "ударные при соло инструментов должны уйти";
+    knob(kMidMsb, kMidLsb, 0x40);
+    EXPECT_NEAR(m_stemVolume[3]->get(), 1.0, 0.05) << "после возврата ручки вокал не вернулся";
+}
+
+TEST_F(StationMappingTest, StationMapping_KnobLeavesStemsAloneWithoutStems) {
+    m_pStemCount->set(0.0);
+    knob(kHighMsb, kHighLsb, 0x00);
+    EXPECT_NEAR(m_stemVolume[3]->get(), 1.0, 1e-9)
+            << "без стем-трека ручка EQ не должна трогать дорожки";
 }
