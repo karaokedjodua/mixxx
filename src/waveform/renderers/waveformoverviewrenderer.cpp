@@ -2,6 +2,9 @@
 
 #include <QPainter>
 
+#include <algorithm>
+
+#include "engine/engine.h"
 #include "util/colorcomponents.h"
 #include "util/math.h"
 #include "util/timer.h"
@@ -318,6 +321,79 @@ void drawWaveformPartHSV(
             pPainter->setPen(color);
             pPainter->drawLine(QPoint(i / 2, -all[0]),
                     QPoint(i / 2, all[1]));
+        }
+    }
+
+    if (start) {
+        *start = end;
+    }
+}
+
+void drawWaveformPartStem(
+        QPainter* pPainter,
+        ConstWaveformPointer pWaveform,
+        int* start,
+        int end,
+        const QList<StemInfo>& stemInfo,
+        const QVector<float>& stemGain) {
+    ScopedTimer t(QStringLiteral("waveformOverviewRenderer::drawNextPixmapPartStem"));
+    int startVal = 0;
+    if (start) {
+        startVal = *start;
+    }
+
+    const int stemCount = std::min({static_cast<int>(stemInfo.size()),
+            static_cast<int>(stemGain.size()),
+            mixxx::kMaxSupportedStems});
+    if (stemCount <= 0) {
+        if (start) {
+            *start = end;
+        }
+        return;
+    }
+
+    QColor colors[mixxx::kMaxSupportedStems];
+    for (int stemIdx = 0; stemIdx < stemCount; stemIdx++) {
+        colors[stemIdx] = stemInfo[stemIdx].getColor();
+    }
+
+    const WaveformData* pData = pWaveform->data();
+    float value[mixxx::kMaxSupportedStems];
+    int order[mixxx::kMaxSupportedStems];
+
+    for (int i = startVal, x = startVal / 2; i < end; i += 2, ++x) {
+        // Слева рисуем вверх, справа вниз — так же, как остальные обзоры.
+        for (int channel = 0; channel < ChannelIndex::ChannelCount; channel++) {
+            const WaveformData& datum = pData[i + channel];
+            for (int stemIdx = 0; stemIdx < stemCount; stemIdx++) {
+                value[stemIdx] = static_cast<float>(datum.stems[stemIdx]) *
+                        stemGain[stemIdx];
+                order[stemIdx] = stemIdx;
+            }
+
+            // Громкие дорожки уходят вниз слоя, тихие рисуются поверх, иначе
+            // высокая дорожка закрыла бы собой все остальные. Дорожек всего
+            // четыре, поэтому простая сортировка вставками здесь уместна.
+            for (int a = 1; a < stemCount; a++) {
+                const int key = order[a];
+                int b = a - 1;
+                while (b >= 0 && value[order[b]] < value[key]) {
+                    order[b + 1] = order[b];
+                    b--;
+                }
+                order[b + 1] = key;
+            }
+
+            const int sign = (channel == ChannelIndex::Left) ? -1 : 1;
+            for (int k = 0; k < stemCount; k++) {
+                const int stemIdx = order[k];
+                const int height = static_cast<int>(value[stemIdx]);
+                if (height <= 0) {
+                    continue;
+                }
+                pPainter->setPen(colors[stemIdx]);
+                pPainter->drawLine(x, 0, x, sign * height);
+            }
         }
     }
 

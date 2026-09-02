@@ -12,6 +12,7 @@
 #include "analyzer/analyzerprogress.h"
 #include "control/controlproxy.h"
 #include "engine/engine.h"
+#include "engine/channels/enginedeck.h"
 #include "mixer/playermanager.h"
 #include "moc_woverview.cpp"
 #include "preferences/colorpalettesettings.h"
@@ -125,6 +126,22 @@ WOverview::WOverview(
     m_pReplayGainBoost->connectValueChanged(this, &WOverview::slotScalingChanged);
     m_pReplayGainEnabled->connectValueChanged(this, &WOverview::slotScalingChanged);
     m_pReplayGainDefaultBoost->connectValueChanged(this, &WOverview::slotScalingChanged);
+
+#ifdef __STEM__
+    // dj-station: следим за громкостью и заглушением каждой дорожки, чтобы
+    // полоса обзора показывала то же, что и верхняя волна.
+    for (int stemIdx = 0; stemIdx < mixxx::kMaxSupportedStems; stemIdx++) {
+        const QString stemGroup = EngineDeck::getGroupForStem(m_group, stemIdx);
+        m_pStemGain.push_back(std::make_unique<ControlProxy>(
+                stemGroup, QStringLiteral("volume")));
+        m_pStemMute.push_back(std::make_unique<ControlProxy>(
+                stemGroup, QStringLiteral("mute")));
+        m_pStemGain.back()->connectValueChanged(
+                this, &WOverview::slotStemGainChanged);
+        m_pStemMute.back()->connectValueChanged(
+                this, &WOverview::slotStemGainChanged);
+    }
+#endif
 
     m_pPassthroughLabel = make_parented<QLabel>(this);
 
@@ -1459,7 +1476,35 @@ bool WOverview::drawNextPixmapPart() {
                 static_cast<float>(pWaveform->getAll(currentCompletion + 1)));
     }
 
-    if (m_type == OverviewType::Filtered) {
+    bool drawnAsStem = false;
+#ifdef __STEM__
+    // dj-station: у стем-трека полоса рисуется по дорожкам, каждая своим
+    // цветом и со своей громкостью. Убранный вокал исчезает и отсюда.
+    const QList<StemInfo> stemInfo =
+            m_pCurrentTrack ? m_pCurrentTrack->getStemInfo() : QList<StemInfo>();
+    if (pWaveform->hasStem() && !stemInfo.isEmpty() && !m_pStemGain.empty()) {
+        QVector<float> stemGain;
+        stemGain.reserve(static_cast<int>(m_pStemGain.size()));
+        for (std::size_t stemIdx = 0; stemIdx < m_pStemGain.size(); stemIdx++) {
+            const bool muted = m_pStemMute[stemIdx]->toBool();
+            stemGain.append(muted
+                            ? 0.f
+                            : static_cast<float>(m_pStemGain[stemIdx]->get()));
+        }
+        waveformOverviewRenderer::drawWaveformPartStem(
+                &painter,
+                pWaveform,
+                &m_actualCompletion,
+                nextCompletion,
+                stemInfo,
+                stemGain);
+        drawnAsStem = true;
+    }
+#endif
+
+    if (drawnAsStem) {
+        // уже нарисовано по дорожкам
+    } else if (m_type == OverviewType::Filtered) {
         waveformOverviewRenderer::drawWaveformPartLMH(
                 &painter,
                 pWaveform,
@@ -1492,6 +1537,26 @@ bool WOverview::drawNextPixmapPart() {
 
     return true;
 }
+
+#ifdef __STEM__
+void WOverview::slotStemGainChanged(double v) {
+    Q_UNUSED(v);
+    if (!m_pWaveform || !m_pWaveform->hasStem()) {
+        return;
+    }
+    // Полоса хранится готовой картинкой и достраивается по мере анализа.
+    // Громкость дорожки меняет её целиком, поэтому собираем заново с нуля;
+    // сводная волна — 3840 отсчётов, это доли миллисекунды.
+    m_actualCompletion = 0;
+    m_pixmapDone = false;
+    m_waveformPeak = -1.0;
+    m_waveformSourceImage = QImage();
+    m_waveformImageScaled = QImage();
+    if (drawNextPixmapPart()) {
+        update();
+    }
+}
+#endif
 
 void WOverview::paintText(const QString& text, QPainter* pPainter) {
     PainterScope painterScope(pPainter);

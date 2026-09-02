@@ -4,6 +4,9 @@
 #include <QList>
 #include <QPixmap>
 
+#include <memory>
+#include <vector>
+
 #include "analyzer/analyzerprogress.h"
 #include "track/track_decl.h"
 #include "track/trackid.h"
@@ -70,6 +73,13 @@ class WOverview : public WWidget, public TrackDropTarget {
     void slotTypeControlChanged(double v);
     void slotMinuteMarkersChanged(bool v);
     void slotScalingChanged();
+
+#ifdef __STEM__
+    /// dj-station: сдвинулась громкость или заглушение одной из дорожек —
+    /// полосу обзора перерисовываем целиком, иначе она продолжит показывать
+    /// убранный вокал. Сводная волна всего 3840 отсчётов, это дёшево.
+    void slotStemGainChanged(double v);
+#endif
 
   private:
     // Append the waveform overview pixmap according to available data
@@ -201,6 +211,13 @@ class WOverview : public WWidget, public TrackDropTarget {
     parented_ptr<ControlProxy> m_pReplayGainEnabled;
     parented_ptr<ControlProxy> m_pReplayGainBoost;
     parented_ptr<ControlProxy> m_pReplayGainDefaultBoost;
+
+#ifdef __STEM__
+    // dj-station: громкость и заглушение каждой дорожки — по ним обзор
+    // перерисовывается, как и верхняя волна.
+    std::vector<std::unique_ptr<ControlProxy>> m_pStemGain;
+    std::vector<std::unique_ptr<ControlProxy>> m_pStemMute;
+#endif
 
     QPointF m_timeRulerPos;
     WaveformMarkLabel m_timeRulerPositionLabel;

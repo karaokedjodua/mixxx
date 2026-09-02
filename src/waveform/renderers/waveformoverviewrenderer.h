@@ -2,6 +2,7 @@
 
 #include <QColor>
 
+#include "track/steminfo.h"
 #include "waveform/overviewtype.h"
 #include "waveform/waveform.h"
 
@@ -41,4 +42,16 @@ void drawWaveformPartHSV(
         int end,
         const WaveformSignalColors& signalColors,
         bool mono = false);
+
+/// dj-station: обзор по стемам. Каждая дорожка рисуется своим цветом и со своей
+/// текущей громкостью, поэтому убранный вокал пропадает и с нижней полосы —
+/// ровно как на верхней волне. Громкости передаются уже с учётом заглушения:
+/// заглушённой дорожке соответствует ноль.
+void drawWaveformPartStem(
+        QPainter* pPainter,
+        ConstWaveformPointer pWaveform,
+        int* start,
+        int end,
+        const QList<StemInfo>& stemInfo,
+        const QVector<float>& stemGain);
 } // namespace waveformOverviewRenderer
