@@ -19,6 +19,8 @@
 #include "engine/enginemixer.h"
 #include "library/coverartcache.h"
 #include "library/library.h"
+#include "library/dao/playlistdao.h"
+#include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
 #include "mixer/basetrackplayer.h"
 #include "mixer/deck.h"
@@ -373,4 +375,66 @@ TEST_F(RemoteApiTest, RefusesLanBindWithoutToken) {
     mixxx::RemoteApiServer server(m_pHandler.get(), settings);
     EXPECT_FALSE(server.start());
     EXPECT_FALSE(server.isListening());
+}
+
+TEST_F(RemoteApiTest, LibraryPlaylists) {
+    const QString location = getTestDir().filePath(kTrackLocation);
+    const TrackPointer pTrack =
+            m_pTrackCollectionManager->getOrAddTrack(TrackRef::fromFilePath(location));
+    ASSERT_NE(pTrack, nullptr);
+    const int trackId = pTrack->getId().toVariant().toInt();
+    // Один и тот же трек PlaylistDAO второй раз не добавляет — нужен второй.
+    const TrackPointer pTrack2 = m_pTrackCollectionManager->getOrAddTrack(
+            TrackRef::fromFilePath(getTestDir().filePath("stems/sidecar/track.wav")));
+    ASSERT_NE(pTrack2, nullptr);
+    const int trackId2 = pTrack2->getId().toVariant().toInt();
+    ASSERT_NE(trackId, trackId2);
+    PlaylistDAO& dao = m_pTrackCollectionManager->internalCollection()->getPlaylistDAO();
+
+    QJsonObject body;
+    body.insert("name", "evening-warmup");
+    body.insert("track_ids", QJsonArray{trackId, trackId2});
+    auto r = call("POST", "/api/library/playlists", "", QJsonDocument(body).toJson());
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    QJsonObject res = bodyJson(*r);
+    EXPECT_TRUE(res.value("created").toBool());
+    EXPECT_EQ(res.value("tracks").toInt(), 2);
+    const int playlistId = res.value("id").toInt();
+    EXPECT_EQ(dao.getPlaylistIdFromName("evening-warmup"), playlistId);
+    EXPECT_EQ(dao.getTrackIdsInPlaylistOrder(playlistId).size(), 2);
+
+    r = call("GET", "/api/library/playlists");
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    bool listed = false;
+    const QJsonArray playlists = bodyJson(*r).value("playlists").toArray();
+    for (const QJsonValue& v : playlists) {
+        if (v.toObject().value("id").toInt() == playlistId) {
+            listed = true;
+            EXPECT_EQ(v.toObject().value("tracks").toInt(), 2);
+        }
+    }
+    EXPECT_TRUE(listed) << "созданный плейлист не попал в список";
+
+    // То же имя по умолчанию заменяет содержимое, а не дописывает.
+    body.insert("track_ids", QJsonArray{trackId});
+    r = call("POST", "/api/library/playlists", "", QJsonDocument(body).toJson());
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    EXPECT_EQ(bodyJson(*r).value("tracks").toInt(), 1);
+    EXPECT_EQ(dao.getTrackIdsInPlaylistOrder(dao.getPlaylistIdFromName("evening-warmup")).size(), 1);
+
+    // replace=false — дописывает в существующий.
+    body.insert("replace", false);
+    body.insert("track_ids", QJsonArray{trackId2});
+    r = call("POST", "/api/library/playlists", "", QJsonDocument(body).toJson());
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    EXPECT_FALSE(bodyJson(*r).value("created").toBool());
+    EXPECT_EQ(bodyJson(*r).value("tracks").toInt(), 2);
+
+    EXPECT_EQ(call("POST", "/api/library/playlists", "",
+                      "{\"name\":\"x\",\"track_ids\":[987654321]}")
+                      ->status,
+            400);
+    EXPECT_EQ(call("POST", "/api/library/playlists", "", "{\"track_ids\":[]}")->status, 400);
+    EXPECT_EQ(call("POST", "/api/library/playlists", "", "{\"name\":\"x\",\"track_ids\":5}")->status, 400);
+    EXPECT_EQ(call("PUT", "/api/library/playlists")->status, 405);
 }

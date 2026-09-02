@@ -89,6 +89,9 @@ class RemoteApiHandler : public QObject {
     /// сетки, тональность, горячие метки. Так на станцию попадают данные
     /// VirtualDJ без пересчёта на слабом планшете.
     void handleLibraryAnalysis(const QByteArray& body, RemoteApiReply* pReply);
+    void handleLibraryPlaylists(const QByteArray& method,
+            const QByteArray& body,
+            RemoteApiReply* pReply);
 
     PlayerManager* m_pPlayerManager;
     TrackCollectionManager* m_pTrackCollectionManager;

@@ -11,6 +11,8 @@
 #include "control/control.h"
 #include "control/controlobject.h"
 #include "control/controlproxy.h"
+#include "library/dao/playlistdao.h"
+#include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
 #include "mixer/basetrackplayer.h"
 #include "mixer/playerinfo.h"
@@ -211,6 +213,10 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
                 return;
             }
             handleLibraryAnalysis(body, pReply);
+            return;
+        }
+        if (parts.size() >= 4 && parts[3] == "playlists") {
+            handleLibraryPlaylists(method, body, pReply);
             return;
         }
         replyError(pReply, 404, QStringLiteral("unknown library call"));
@@ -481,6 +487,102 @@ void RemoteApiHandler::handleLibraryAnalysis(const QByteArray& body, RemoteApiRe
     }
 
     m_pTrackCollectionManager->saveTrack(pTrack);
+    reply(pReply, 200, result);
+}
+
+// dj-station: плейлисты с пульта (подбор ИИ / по правилам). Пишем через
+// PlaylistDAO в главном потоке, а не в базу мимо Mixxx: тогда боковая панель
+// библиотеки обновляется сразу, а не после перезапуска.
+//   GET  -> {playlists:[{id,name,tracks,locked}]}
+//   POST {name, track_ids:[...], replace:true, autodj:""|"top"|"bottom"}
+//        -> {id, name, created, tracks}
+void RemoteApiHandler::handleLibraryPlaylists(const QByteArray& method,
+        const QByteArray& body,
+        RemoteApiReply* pReply) {
+    if (!m_pTrackCollectionManager) {
+        replyError(pReply, 503, QStringLiteral("no library"));
+        return;
+    }
+    PlaylistDAO& dao = m_pTrackCollectionManager->internalCollection()->getPlaylistDAO();
+
+    if (method == "GET") {
+        QJsonArray list;
+        const auto playlists = dao.getPlaylists(PlaylistDAO::PLHT_NOT_HIDDEN);
+        for (const auto& pair : playlists) {
+            QJsonObject p;
+            p.insert(QStringLiteral("id"), pair.first);
+            p.insert(QStringLiteral("name"), pair.second);
+            p.insert(QStringLiteral("tracks"), static_cast<int>(dao.getTrackIds(pair.first).size()));
+            p.insert(QStringLiteral("locked"), dao.isPlaylistLocked(pair.first));
+            list.append(p);
+        }
+        reply(pReply, 200, QJsonObject{{QStringLiteral("playlists"), list}});
+        return;
+    }
+    if (method != "POST") {
+        replyError(pReply, 405, QStringLiteral("GET or POST required"));
+        return;
+    }
+
+    const QJsonObject o = QJsonDocument::fromJson(body).object();
+    const QString name = o.value(QStringLiteral("name")).toString().trimmed();
+    if (name.isEmpty()) {
+        replyError(pReply, 400, QStringLiteral("name required"));
+        return;
+    }
+    const QJsonValue idsValue = o.value(QStringLiteral("track_ids"));
+    if (!idsValue.isArray()) {
+        replyError(pReply, 400, QStringLiteral("track_ids must be an array"));
+        return;
+    }
+    // Чужой id — ошибка целиком, а не молчаливая дыра в плейлисте.
+    QList<TrackId> trackIds;
+    const QJsonArray idsArray = idsValue.toArray();
+    for (const QJsonValue& v : idsArray) {
+        const TrackId trackId(v.toVariant());
+        if (!trackId.isValid() || !m_pTrackCollectionManager->getTrackById(trackId)) {
+            replyError(pReply, 400,
+                    QStringLiteral("no such track: %1").arg(v.toVariant().toString()));
+            return;
+        }
+        trackIds.append(trackId);
+    }
+    const bool replace = o.value(QStringLiteral("replace")).toBool(true);
+
+    int playlistId = dao.getPlaylistIdFromName(name);
+    bool created = false;
+    if (playlistId >= 0 && replace) {
+        if (dao.isPlaylistLocked(playlistId)) {
+            replyError(pReply, 409, QStringLiteral("playlist is locked"));
+            return;
+        }
+        dao.deletePlaylist(playlistId);
+        playlistId = -1;
+    }
+    if (playlistId < 0) {
+        playlistId = dao.createPlaylist(name);
+        created = true;
+    }
+    if (playlistId < 0) {
+        replyError(pReply, 500, QStringLiteral("could not create playlist"));
+        return;
+    }
+    if (!trackIds.isEmpty() && !dao.appendTracksToPlaylist(trackIds, playlistId)) {
+        replyError(pReply, 500, QStringLiteral("could not add tracks"));
+        return;
+    }
+    const QString autodj = o.value(QStringLiteral("autodj")).toString();
+    if (autodj == QLatin1String("top")) {
+        dao.addPlaylistToAutoDJQueue(playlistId, PlaylistDAO::AutoDJSendLoc::TOP);
+    } else if (autodj == QLatin1String("bottom")) {
+        dao.addPlaylistToAutoDJQueue(playlistId, PlaylistDAO::AutoDJSendLoc::BOTTOM);
+    }
+
+    QJsonObject result;
+    result.insert(QStringLiteral("id"), playlistId);
+    result.insert(QStringLiteral("name"), name);
+    result.insert(QStringLiteral("created"), created);
+    result.insert(QStringLiteral("tracks"), static_cast<int>(dao.getTrackIds(playlistId).size()));
     reply(pReply, 200, result);
 }
 
