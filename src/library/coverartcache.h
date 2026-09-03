@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QThreadPool>
 #include <QObject>
 #include <QPair>
 #include <QPixmap>
@@ -88,5 +89,9 @@ class CoverArtCache : public QObject, public Singleton<CoverArtCache> {
         const QObject* pRequester;
         int desiredWidth;
     };
+    // dj-station: свой пул на один поток. Через общий пул на двухъядерной
+    // машине залп задач при показе списка занимал оба ядра вместе со звуком
+    // и интерфейсом.
+    QThreadPool m_backgroundPool;
     QMultiHash<mixxx::cache_key_t, RequestData> m_runningRequests;
 };

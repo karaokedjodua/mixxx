@@ -11,6 +11,7 @@
 #include "waveform/renderers/waveformsignalcolors.h"
 #include "widget/wbasewidget.h"
 
+class QShowEvent;
 class LibraryView;
 class WTrackTableView;
 class TrackId;
@@ -33,6 +34,9 @@ class WLibrary : public QStackedWidget, public WBaseWidget {
     bool registerView(const QString& name, QWidget* view);
 
     LibraryView* getActiveView() const;
+
+    // dj-station: при показе отдаём фокус списку — см. wlibrary.cpp.
+    void showEvent(QShowEvent* pEvent) override;
     WTrackTableView* getCurrentTrackTableView() const;
     // This returns true if the current view is or has a WTracksTableView and
     // contains trackId, otherwise false.

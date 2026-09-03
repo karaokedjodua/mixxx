@@ -38,6 +38,9 @@ OverviewCache::OverviewCache(UserSettingsPointer pConfig,
         mixxx::DbConnectionPoolPtr pDbConnectionPool)
         : m_pConfig(pConfig),
           m_pDbConnectionPool(std::move(pDbConnectionPool)) {
+    // Один поток: на двухъядерной машине залп задач при показе списка
+    // занимал оба ядра вместе со звуком и интерфейсом.
+    m_backgroundPool.setMaxThreadCount(1);
 }
 
 void OverviewCache::onTrackAnalysisProgress(TrackId trackId, AnalyzerProgress analyzerProgress) {
@@ -122,6 +125,7 @@ QPixmap OverviewCache::requestUncachedOverview(
 
     QFutureWatcher<FutureResult>* watcher = new QFutureWatcher<FutureResult>(this);
     QFuture<FutureResult> future = QtConcurrent::run(
+            &m_backgroundPool,
             &OverviewCache::prepareOverview,
             m_pConfig,
             m_pDbConnectionPool,
@@ -178,11 +182,8 @@ OverviewCache::FutureResult OverviewCache::prepareOverview(
                     pLoadedTrackWaveformSummary,
                     type,
                     signalColors,
-                    true /* mono, bottom-aligned */);
-
-            if (!image.isNull()) {
-                image = resizeImageSize(image, desiredSize);
-            }
+                    true /* mono, bottom-aligned */,
+                    desiredSize /* сразу в размер ячейки */);
             result.image = image;
         }
     }

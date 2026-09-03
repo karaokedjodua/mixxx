@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QThreadPool>
 #include <QSqlDatabase>
 
 #include "analyzer/analyzerprogress.h"
@@ -71,6 +72,10 @@ class OverviewCache : public QObject, public Singleton<OverviewCache> {
     UserSettingsPointer m_pConfig;
     mixxx::DbConnectionPoolPtr m_pDbConnectionPool;
 
+    // dj-station: свой пул на один поток. Через общий пул на двухъядерной
+    // машине залп задач при показе списка занимал оба ядра вместе со звуком
+    // и интерфейсом.
+    QThreadPool m_backgroundPool;
     QSet<TrackId> m_currentlyLoading;
     QSet<TrackId> m_tracksWithoutOverview;
     QMultiHash<TrackId, QString> m_cacheKeysByTrackId;

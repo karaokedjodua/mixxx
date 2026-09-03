@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QImage>
+#include <QSize>
 
 #include "track/steminfo.h"
 #include "waveform/overviewtype.h"
@@ -13,10 +14,14 @@ class WaveformSignalColors;
 namespace waveformOverviewRenderer {
 /// This returns the normalized fullsize image
 /// for the library's overview column.
+/// targetSize: если задан, картинка сразу отдаётся в этом размере. Без него
+/// вызывающему приходилось масштабировать ещё раз, и на ячейку списка треков
+/// приходилось два полноразмерных сглаживания вместо одного уменьшения.
 QImage render(ConstWaveformPointer pWaveform,
         mixxx::OverviewType type,
         const WaveformSignalColors& signalColors,
-        bool mono = false);
+        bool mono = false,
+        QSize targetSize = QSize());
 
 /// These paint methods return the fullsize image
 /// They allow "mono" rendering (mono-mixdown, bottom-aligned).

@@ -17,7 +17,8 @@ namespace waveformOverviewRenderer {
 QImage render(ConstWaveformPointer pWaveform,
         mixxx::OverviewType type,
         const WaveformSignalColors& signalColors,
-        bool mono) {
+        bool mono,
+        QSize targetSize) {
     const int dataSize = pWaveform->getDataSize();
     if (dataSize <= 0) {
         return QImage();
@@ -74,7 +75,12 @@ QImage render(ConstWaveformPointer pWaveform,
                     2 * static_cast<int>(diffGain));
     QImage croppedImage = image.copy(sourceRect);
     // Copy image, otherwise QPainter crashes when we alter it.
-    QImage normImage = croppedImage.scaled(image.size(),
+    // Нормализация — это растяжение обрезанной картинки обратно. Если размер
+    // назначения известен (ячейка списка треков — около сотни пикселей),
+    // растягивать до 1921x510, чтобы следом уменьшить, чистая потеря: делаем
+    // одно уменьшение сразу в нужный размер.
+    const QSize outSize = targetSize.isEmpty() ? image.size() : targetSize;
+    QImage normImage = croppedImage.scaled(outSize,
             Qt::IgnoreAspectRatio,
             Qt::SmoothTransformation);
 

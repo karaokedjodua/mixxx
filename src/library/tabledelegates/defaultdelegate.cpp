@@ -1,6 +1,8 @@
 #include "library/tabledelegates/defaultdelegate.h"
 
+#include <QApplication>
 #include <QPainter>
+#include <QStyle>
 
 #include "moc_defaultdelegate.cpp"
 
@@ -20,7 +22,12 @@ void DefaultDelegate::paint(
     }
     // TODO Guarantee font/bg contrast with ALL track colors
 
-    QStyledItemDelegate::paint(painter, opt, index);
+    // QStyledItemDelegate::paint ещё раз вызывает initStyleOption и спрашивает
+    // у модели те же роли; при прокрутке это лишний обход по всем видимым
+    // строкам. Рисуем стилем напрямую по уже заполненным настройкам.
+    const QWidget* pWidget = opt.widget;
+    QStyle* pStyle = pWidget ? pWidget->style() : QApplication::style();
+    pStyle->drawControl(QStyle::CE_ItemViewItem, &opt, painter, pWidget);
 }
 
 void DefaultDelegate::setTextColor(

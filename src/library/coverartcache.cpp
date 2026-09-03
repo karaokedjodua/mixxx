@@ -30,6 +30,9 @@ inline QImage resizeImageWidth(const QImage& image, int width) {
 } // anonymous namespace
 
 CoverArtCache::CoverArtCache() {
+    // Один поток: обложка со встроенной картинкой — это открыть аудиофайл и
+    // распаковать изображение; залп таких задач занимал оба ядра.
+    m_backgroundPool.setMaxThreadCount(1);
 }
 
 //static
@@ -171,6 +174,7 @@ void CoverArtCache::tryLoadCover(
     // The watcher will be deleted in coverLoaded()
     QFutureWatcher<FutureResult>* watcher = new QFutureWatcher<FutureResult>(this);
     QFuture<FutureResult> future = QtConcurrent::run(
+            &m_backgroundPool,
             &CoverArtCache::loadCover,
             pTrack,
             coverInfo,

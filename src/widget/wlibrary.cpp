@@ -100,6 +100,19 @@ void WLibrary::search(const QString& name) {
     pView->onSearch(name);
 }
 
+void WLibrary::showEvent(QShowEvent* pEvent) {
+    QStackedWidget::showEvent(pEvent);
+    // dj-station: страницу браузера открывают касанием вкладки, а не с
+    // клавиатуры, и фокус никуда не переходил: колесо, энкодер пульта и
+    // стрелки не прокручивали список, пока не ткнёшь пальцем в трек.
+    // Отдаём фокус текущему списку сразу — [Library],focused_widget
+    // обновится сам, он следит за сменой фокуса в приложении.
+    QWidget* pCurrent = currentWidget();
+    if (pCurrent && !pCurrent->hasFocus()) {
+        pCurrent->setFocus(Qt::OtherFocusReason);
+    }
+}
+
 LibraryView* WLibrary::getActiveView() const {
     return dynamic_cast<LibraryView*>(currentWidget());
 }
