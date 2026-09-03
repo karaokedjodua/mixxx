@@ -147,6 +147,12 @@ WOverview::WOverview(
             &QTimer::timeout,
             this,
             &WOverview::slotRebuildStemOverview);
+    m_stemSettleTimer.setSingleShot(true);
+    m_stemSettleTimer.setInterval(300);
+    connect(&m_stemSettleTimer,
+            &QTimer::timeout,
+            this,
+            &WOverview::slotStemScaleSettled);
 #endif
 
     m_pPassthroughLabel = make_parented<QLabel>(this);
@@ -724,6 +730,14 @@ void WOverview::paintEvent(QPaintEvent* pEvent) {
         painter.drawPixmap(rect(), m_backgroundPixmap);
     }
 
+#ifdef __STEM__
+    // Полоса могла устареть, пока страница скина была скрыта.
+    if (m_stemOverviewDirty && m_pWaveform && m_pWaveform->hasStem()) {
+        m_stemOverviewDirty = false;
+        slotRebuildStemOverview();
+    }
+#endif
+
     if (m_pCurrentTrack) {
         // Refer to util/ScopePainter.h to understand the semantics of
         // ScopePainter.
@@ -822,9 +836,19 @@ void WOverview::drawWaveformPixmap(QPainter* pPainter) {
             // Rotate pixmap
             croppedImage = croppedImage.transformed(QTransform(0, 1, 1, 0, 0, 0));
         }
+        // Пока ручку крутят, сглаживание нам не по карману: уменьшение
+        // картинки 1921x510 сглаженным способом занимает больше полусотни
+        // миллисекунд, и это видно как рывок. Чистовую версию соберёт
+        // slotStemScaleSettled, когда движение прекратится.
+        Qt::TransformationMode mode = Qt::SmoothTransformation;
+#ifdef __STEM__
+        if (m_stemScaleFast) {
+            mode = Qt::FastTransformation;
+        }
+#endif
         m_waveformImageScaled = croppedImage.scaled(size() * m_devicePixelRatio,
                 Qt::IgnoreAspectRatio,
-                Qt::SmoothTransformation);
+                mode);
         m_diffGain = diffGain;
     }
 
@@ -1489,9 +1513,6 @@ bool WOverview::drawNextPixmapPart() {
     //  << "waveformCompletion:" << waveformCompletion
     //  << "completionIncrement:" << completionIncrement;
 
-    QPainter painter(&m_waveformSourceImage);
-    painter.translate(0.0, static_cast<double>(m_waveformSourceImage.height()) / 2.0);
-
     // Evaluate waveform ratio peak
     for (int currentCompletion = m_actualCompletion;
             currentCompletion < nextCompletion;
@@ -1519,7 +1540,7 @@ bool WOverview::drawNextPixmapPart() {
                             : static_cast<float>(m_pStemGain[stemIdx]->get()));
         }
         waveformOverviewRenderer::drawWaveformPartStem(
-                &painter,
+                &m_waveformSourceImage,
                 pWaveform,
                 &m_actualCompletion,
                 nextCompletion,
@@ -1543,29 +1564,37 @@ bool WOverview::drawNextPixmapPart() {
     }
 #endif
 
+    // Стем-путь пишет в картинку напрямую, поэтому QPainter создаём только
+    // для остальных видов обзора: держать его открытым над картинкой, в
+    // которую пишут напрямую, нельзя.
     if (drawnAsStem) {
         // уже нарисовано по дорожкам
-    } else if (m_type == OverviewType::Filtered) {
-        waveformOverviewRenderer::drawWaveformPartLMH(
-                &painter,
-                pWaveform,
-                &m_actualCompletion,
-                nextCompletion,
-                m_signalColors);
-    } else if (m_type == OverviewType::HSV) {
-        waveformOverviewRenderer::drawWaveformPartHSV(
-                &painter,
-                pWaveform,
-                &m_actualCompletion,
-                nextCompletion,
-                m_signalColors);
-    } else { // OverviewType::RGB:
-        waveformOverviewRenderer::drawWaveformPartRGB(
-                &painter,
-                pWaveform,
-                &m_actualCompletion,
-                nextCompletion,
-                m_signalColors);
+    } else {
+        QPainter painter(&m_waveformSourceImage);
+        painter.translate(
+                0.0, static_cast<double>(m_waveformSourceImage.height()) / 2.0);
+        if (m_type == OverviewType::Filtered) {
+            waveformOverviewRenderer::drawWaveformPartLMH(
+                    &painter,
+                    pWaveform,
+                    &m_actualCompletion,
+                    nextCompletion,
+                    m_signalColors);
+        } else if (m_type == OverviewType::HSV) {
+            waveformOverviewRenderer::drawWaveformPartHSV(
+                    &painter,
+                    pWaveform,
+                    &m_actualCompletion,
+                    nextCompletion,
+                    m_signalColors);
+        } else { // OverviewType::RGB:
+            waveformOverviewRenderer::drawWaveformPartRGB(
+                    &painter,
+                    pWaveform,
+                    &m_actualCompletion,
+                    nextCompletion,
+                    m_signalColors);
+        }
     }
 
     m_waveformImageScaled = QImage();
@@ -1585,6 +1614,13 @@ void WOverview::slotStemGainChanged(double v) {
     if (!m_pWaveform || !m_pWaveform->hasStem()) {
         return;
     }
+    // Полос обзора в скине больше, чем видно: по одной на каждой странице.
+    // Невидимой перерисовываться незачем — отметим, что она устарела, и
+    // соберём заново, когда её действительно покажут.
+    if (!isVisible()) {
+        m_stemOverviewDirty = true;
+        return;
+    }
     // Перерисовываем не во время движения ручки, а когда оно замерло:
     // каждый новый сигнал откладывает срабатывание. Пока ручка крутится,
     // живую картину даёт верхняя волна; полоса догоняет, как только ручку
@@ -1597,6 +1633,13 @@ void WOverview::slotRebuildStemOverview() {
         qInfo() << "WOverview" << m_group << "stem gain changed but no stem summary";
         return;
     }
+    if (!isVisible()) {
+        m_stemOverviewDirty = true;
+        return;
+    }
+    m_stemOverviewDirty = false;
+    m_stemScaleFast = true;
+    m_stemSettleTimer.start();
     // Полоса хранится готовой картинкой и достраивается по мере анализа.
     // Громкость дорожки меняет её целиком, поэтому собираем заново с нуля;
     // сводная волна — 3840 отсчётов, это доли миллисекунды.
@@ -1608,6 +1651,17 @@ void WOverview::slotRebuildStemOverview() {
     if (drawNextPixmapPart()) {
         update();
     }
+}
+
+void WOverview::slotStemScaleSettled() {
+    if (!m_stemScaleFast) {
+        return;
+    }
+    // Ручка замерла — одна чистовая перерисовка вместо сглаживания на
+    // каждом движении.
+    m_stemScaleFast = false;
+    m_waveformImageScaled = QImage();
+    update();
 }
 #endif
 

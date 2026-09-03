@@ -81,6 +81,7 @@ class WOverview : public WWidget, public TrackDropTarget {
     /// убранный вокал. Сводная волна всего 3840 отсчётов, это дёшево.
     void slotStemGainChanged(double v);
     void slotRebuildStemOverview();
+    void slotStemScaleSettled();
 #endif
 
   private:
@@ -223,6 +224,14 @@ class WOverview : public WWidget, public TrackDropTarget {
     // собирается заново целиком. Без склейки это десятки полных перерисовок
     // в секунду на каждую деку — станция от такого вставала.
     QTimer m_stemRedrawTimer;
+    // Пока ручку крутят, полоса масштабируется быстрым способом: сглаженное
+    // уменьшение картинки 1921x510 стоило больше полусотни миллисекунд на
+    // каждое движение. Чистовую картинку рисуем один раз, когда ручка замерла.
+    QTimer m_stemSettleTimer;
+    bool m_stemScaleFast{false};
+    // В скине по три полосы на деку (по одной на страницу), а видна одна.
+    // Невидимые ждут показа вместо того, чтобы перерисовываться впустую.
+    bool m_stemOverviewDirty{false};
 #endif
 
     QPointF m_timeRulerPos;

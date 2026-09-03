@@ -2131,8 +2131,20 @@ PioneerDDJSX.VuMeterLeds = function(value, group, control) {
 
     PioneerDDJSX.valueVuMeter[group + "_current"] = value;
 
+    // dj-station: раньше обновление уровня одной деки рассылало сообщения
+    // всем четырём — вчетверо лишний трафик и работа потока контроллера
+    // (около 600 сообщений в секунду). Каждая дека и так шлёт своё
+    // обновление тридцать раз в секунду, поэтому достаточно своей.
+    // Исключение — мигание при Auto DJ: там молчащая дека сама ничего не
+    // пришлёт, и обход всех четырёх нужен по-прежнему.
+    var twinkleAll = PioneerDDJSX.twinkleVumeterAutodjOn &&
+        engine.getValue("[AutoDJ]", "enabled");
+
     for (var index in PioneerDDJSX.channelGroups) {
         if (PioneerDDJSX.channelGroups.hasOwnProperty(index)) {
+            if (!twinkleAll && index !== group) {
+                continue;
+            }
             midiOut = PioneerDDJSX.valueVuMeter[index + "_current"];
             if (PioneerDDJSX.twinkleVumeterAutodjOn) {
                 if (engine.getValue("[AutoDJ]", "enabled")) {

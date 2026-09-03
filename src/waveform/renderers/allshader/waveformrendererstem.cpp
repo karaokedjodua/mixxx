@@ -190,56 +190,72 @@ bool WaveformRendererStem::preprocessInner() {
 
     const double maxSamplingRange = visualIncrementPerPixel / 2.0;
 
+    // dj-station: цвет, громкость и заглушение дорожки за кадр не меняются, а
+    // раньше доставались в самом внутреннем цикле — почти десять тысяч раз на
+    // кадр, шестьдесят кадров в секунду на деку. Считаем один раз на кадр.
+    struct StemFrameConst {
+        float r;
+        float g;
+        float b;
+        float aOutline;
+        float aFill;
+        float gain;
+    };
+    StemFrameConst stemConst[mixxx::kMaxSupportedStems]{};
+    for (int stemIdx = 0; stemIdx < stemInfo.size() &&
+            stemIdx < static_cast<int>(mixxx::kMaxSupportedStems);
+            stemIdx++) {
+        const QColor stemColor = stemInfo[stemIdx].getColor();
+        StemFrameConst& c = stemConst[stemIdx];
+        c.r = static_cast<float>(stemColor.redF());
+        c.g = static_cast<float>(stemColor.greenF());
+        c.b = static_cast<float>(stemColor.blueF());
+        const auto alpha = static_cast<float>(stemColor.alphaF());
+        c.aOutline = alpha * m_outlineOpacity;
+        c.aFill = alpha * m_opacity;
+        if (selectedStems) {
+            c.gain = (selectedStems & 1 << stemIdx) ? 1.f : 0.f;
+        } else if (!m_pStemMute.empty() && m_pStemMute[stemIdx]->toBool()) {
+            c.gain = 0.f;
+        } else {
+            c.gain = m_pStemGain.empty()
+                    ? 1.f
+                    : static_cast<float>(m_pStemGain[stemIdx]->get());
+        }
+    }
+
     for (int visualIdx = 0; visualIdx < stripLength; visualIdx++) {
+        // Окно отсчётов и координата столбца одинаковы для всех дорожек и
+        // обоих слоёв — считаем их здесь, а не внутри.
+        const int visualFrameStart = std::lround(xVisualFrame - maxSamplingRange);
+        const int visualFrameStop = std::lround(xVisualFrame + maxSamplingRange);
+        const int visualIndexStart = std::max(visualFrameStart * 2, 0);
+        const int visualIndexStop =
+                std::min(std::max(visualFrameStop, visualFrameStart + 1) * 2, dataSize - 1);
+        const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
+
         int stemLayer = 0;
         for (int stemIdx : std::as_const(m_stackOrder)) {
+            const StemFrameConst& c = stemConst[stemIdx];
+
+            // Максимум по отсчётам одинаков для обоих слоёв — раньше он
+            // считался дважды подряд с тем же результатом.
+            uchar u8max{};
+            for (int chn = 0; chn < 2; chn++) {
+                // data is interleaved left / right
+                for (int i = visualIndexStart + chn; i < visualIndexStop + chn; i += 2) {
+                    u8max = math_max(u8max, data[i].stems[stemIdx]);
+                }
+            }
+            const float rawMax = static_cast<float>(u8max);
+            const int yIndex = m_splitStemTracks ? stemIdx : stemLayer;
+            const float yBase = yIndex * stemBreadth + halfBreadth;
+
             // Stem is drawn twice with different opacity level, this allow to
             // see the maximum signal by transparency
             for (int layerIdx = 0; layerIdx < 2; layerIdx++) {
-                QColor stemColor = stemInfo[stemIdx].getColor();
-                float color_r = stemColor.redF(),
-                      color_g = stemColor.greenF(),
-                      color_b = stemColor.blueF(),
-                      color_a = stemColor.alphaF() * (layerIdx ? m_opacity : m_outlineOpacity);
-                const int visualFrameStart = std::lround(xVisualFrame - maxSamplingRange);
-                const int visualFrameStop = std::lround(xVisualFrame + maxSamplingRange);
-
-                const int visualIndexStart = std::max(visualFrameStart * 2, 0);
-                const int visualIndexStop =
-                        std::min(std::max(visualFrameStop, visualFrameStart + 1) * 2, dataSize - 1);
-
-                const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
-
-                // Find the max values for current eq in the waveform data.
-                // - Max of left and right
-                uchar u8max{};
-                for (int chn = 0; chn < 2; chn++) {
-                    // data is interleaved left / right
-                    for (int i = visualIndexStart + chn; i < visualIndexStop + chn; i += 2) {
-                        const WaveformData& waveformData = data[i];
-
-                        u8max = math_max(u8max, waveformData.stems[stemIdx]);
-                    }
-                }
-
-                // Cast to float
-                float max = static_cast<float>(u8max);
-
-                // Apply the gains
-                if (layerIdx) {
-                    if (selectedStems) {
-                        max *= !(selectedStems & 1 << stemIdx)
-                                ? 0.f
-                                : 1.f;
-                    } else if (!m_pStemMute.empty() && m_pStemMute[stemIdx]->toBool()) {
-                        max = 0;
-                    } else {
-                        float volume = m_pStemGain.empty()
-                                ? 1.f
-                                : static_cast<float>(m_pStemGain[stemIdx]->get());
-                        max *= volume;
-                    }
-                }
+                const float max = layerIdx ? rawMax * c.gain : rawMax;
+                const float color_a = layerIdx ? c.aFill : c.aOutline;
 
                 // Lines are thin rectangles
                 // shadow
@@ -247,15 +263,11 @@ bool WaveformRendererStem::preprocessInner() {
                 if (m_splitStemTracks) {
                     height = std::min(height, halfBreadth);
                 }
-                const int yIndex = m_splitStemTracks ? stemIdx : stemLayer;
                 vertexUpdater.addRectangle(
-                        {fVisualIdx - halfStripSize,
-                                yIndex * stemBreadth + halfBreadth - height},
+                        {fVisualIdx - halfStripSize, yBase - height},
                         {fVisualIdx + halfStripSize,
-                                m_isSlipRenderer
-                                        ? yIndex * stemBreadth + halfBreadth
-                                        : yIndex * stemBreadth + halfBreadth + height},
-                        {color_r, color_g, color_b, color_a});
+                                m_isSlipRenderer ? yBase : yBase + height},
+                        {c.r, c.g, c.b, color_a});
             }
             stemLayer++;
         }

@@ -238,12 +238,9 @@ TEST_F(AnalyzerWaveformTest, SummaryFromRealAnalyzerCarriesStems) {
     auto renderCount = [&](const QVector<float>& gains) {
         QImage img(dataSize / 2, 2 * 255, QImage::Format_ARGB32_Premultiplied);
         img.fill(QColor(0, 0, 0, 0).value());
-        QPainter painter(&img);
-        painter.translate(0.0, img.height() / 2.0);
         int start = 0;
         waveformOverviewRenderer::drawWaveformPartStem(
-                &painter, pSummary, &start, dataSize, info, gains);
-        painter.end();
+                &img, pSummary, &start, dataSize, info, gains);
         int painted = 0;
         for (int y = 0; y < img.height(); y++) {
             const QRgb* row = reinterpret_cast<const QRgb*>(img.constScanLine(y));

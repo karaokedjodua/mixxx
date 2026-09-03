@@ -332,7 +332,7 @@ void drawWaveformPartHSV(
 }
 
 void drawWaveformPartStem(
-        QPainter* pPainter,
+        QImage* pImage,
         ConstWaveformPointer pWaveform,
         int* start,
         int end,
@@ -347,6 +347,13 @@ void drawWaveformPartStem(
     const int stemCount = std::min({static_cast<int>(stemInfo.size()),
             static_cast<int>(stemGain.size()),
             mixxx::kMaxSupportedStems});
+    if (!pImage || pImage->isNull() ||
+            pImage->format() != QImage::Format_ARGB32_Premultiplied) {
+        if (start) {
+            *start = end;
+        }
+        return;
+    }
     if (stemCount <= 0 || end <= startVal) {
         if (start) {
             *start = end;
@@ -381,31 +388,34 @@ void drawWaveformPartStem(
         order[b + 1] = key;
     }
 
-    // Одна дорожка — одно перо и одна пачка линий: слева вверх, справа вниз.
-    QVector<QLine> lines;
-    lines.reserve((end - startVal));
+    // Один столбец — один заход по строкам картинки. Раньше здесь набиралось
+    // до 15 000 QLine и рисовалось пером: сама отрисовка дёшева, а накладные
+    // расходы пера давали стоп главного потока на сотни миллисекунд.
+    const int width = pImage->width();
+    const int height = pImage->height();
+    const int centerY = height / 2;
+    uchar* pBits = pImage->bits();
+    const qsizetype stride = pImage->bytesPerLine();
+
     for (int k = 0; k < stemCount; k++) {
         const int stemIdx = order[k];
         const float gain = stemGain[stemIdx];
         if (gain <= 0.f) {
             continue;
         }
-        lines.clear();
+        const QRgb color = qPremultiply(stemInfo[stemIdx].getColor().rgba());
         for (int i = startVal, x = startVal / 2; i < end; i += 2, ++x) {
+            if (x < 0 || x >= width) {
+                continue;
+            }
             const int up = static_cast<int>(pData[i].stems[stemIdx] * gain);
-            if (up > 0) {
-                lines.append(QLine(x, 0, x, -up));
-            }
             const int down = static_cast<int>(pData[i + 1].stems[stemIdx] * gain);
-            if (down > 0) {
-                lines.append(QLine(x, 0, x, down));
+            const int yTop = std::max(0, centerY - up);
+            const int yBottom = std::min(height - 1, centerY + down);
+            for (int y = yTop; y <= yBottom; y++) {
+                reinterpret_cast<QRgb*>(pBits + y * stride)[x] = color;
             }
         }
-        if (lines.isEmpty()) {
-            continue;
-        }
-        pPainter->setPen(stemInfo[stemIdx].getColor());
-        pPainter->drawLines(lines.constData(), lines.size());
     }
 
     if (start) {
