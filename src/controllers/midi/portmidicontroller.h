@@ -123,5 +123,15 @@ class PortMidiController : public MidiController {
     int m_cReceiveMsg_index;
     bool m_bInSysex;
 
+    // dj-station: вынутый из USB пульт отвечает ошибкой на каждое чтение и
+    // каждую отправку. Считаем ошибки подряд и после порога перестаём
+    // дёргать устройство до следующего открытия — иначе опрос раз в
+    // миллисекунду и поток предупреждений съедают заметную часть ядра.
+    static constexpr int kDeadDeviceStreak = 5;
+    int m_inputErrorStreak{0};
+    int m_outputErrorStreak{0};
+    bool m_inputLost{false};
+    bool m_outputLost{false};
+
     friend class PortMidiControllerTest;
 };

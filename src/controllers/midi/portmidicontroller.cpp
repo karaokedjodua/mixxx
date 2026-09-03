@@ -60,6 +60,8 @@ int PortMidiController::open(const QString& resourcePath) {
         qCInfo(m_logBase) << "PortMidiController: Opening"
                           << m_pInputDevice->info()->name << "index"
                           << m_pInputDevice->index() << "for input";
+        m_inputErrorStreak = 0;
+        m_inputLost = false;
         PmError err = m_pInputDevice->openInput(MIXXX_PORTMIDI_BUFFER_LEN);
 
         if (err != pmNoError) {
@@ -72,6 +74,8 @@ int PortMidiController::open(const QString& resourcePath) {
                           << m_pOutputDevice->info()->name << "index"
                           << m_pOutputDevice->index() << "for output";
 
+        m_outputErrorStreak = 0;
+        m_outputLost = false;
         PmError err = m_pOutputDevice->openOutput();
         if (err != pmNoError) {
             qCWarning(m_logBase) << "PortMidi error:" << Pm_GetErrorText(err);
@@ -117,7 +121,7 @@ int PortMidiController::close() {
 
 bool PortMidiController::poll() {
     // Poll the controller for new data if it's an input device
-    if (m_pInputDevice.isNull() || !m_pInputDevice->isOpen()) {
+    if (m_pInputDevice.isNull() || !m_pInputDevice->isOpen() || m_inputLost) {
         return false;
     }
 
@@ -126,9 +130,23 @@ bool PortMidiController::poll() {
     //qDebug() << "PortMidiController::poll()" << numEvents;
 
     if (numEvents < 0) {
+        // dj-station: у вынутого из USB устройства ошибкой кончается каждое
+        // чтение, а опрос идёт раз в миллисекунду. Несколько подряд — считаем
+        // ввод потерянным и молчим до повторного открытия.
+        if (++m_inputErrorStreak >= kDeadDeviceStreak) {
+            if (!m_inputLost) {
+                m_inputLost = true;
+                qCWarning(m_logInput)
+                        << "PortMidi input lost, stopping polling until the "
+                           "device is opened again:"
+                        << Pm_GetErrorText((PmError)numEvents);
+            }
+            return false;
+        }
         qCWarning(m_logInput) << "PortMidi error:" << Pm_GetErrorText((PmError)numEvents);
         return false;
     }
+    m_inputErrorStreak = 0;
 
     for (int i = 0; i < numEvents; i++) {
         unsigned char status = Pm_MessageStatus(m_midiBuffer[i].message);
@@ -193,7 +211,7 @@ bool PortMidiController::poll() {
 
 void PortMidiController::sendShortMsg(unsigned char status, unsigned char byte1,
                                       unsigned char byte2) {
-    if (m_pOutputDevice.isNull() || !m_pOutputDevice->isOpen()) {
+    if (m_pOutputDevice.isNull() || !m_pOutputDevice->isOpen() || m_outputLost) {
         return;
     }
 
@@ -202,6 +220,7 @@ void PortMidiController::sendShortMsg(unsigned char status, unsigned char byte1,
 
     PmError err = m_pOutputDevice->writeShort(word);
     if (err == pmNoError) {
+        m_outputErrorStreak = 0;
         qCDebug(m_logOutput) << QStringLiteral("outgoing: ")
                              << MidiUtils::formatMidiOpCode(getName(),
                                         status,
@@ -209,6 +228,17 @@ void PortMidiController::sendShortMsg(unsigned char status, unsigned char byte1,
                                         byte2,
                                         MidiUtils::channelFromStatus(status),
                                         MidiUtils::opCodeFromStatus(status));
+    } else if (++m_outputErrorStreak >= kDeadDeviceStreak) {
+        // dj-station: подсветка пульта шлётся десятками сообщений в секунду;
+        // у вынутого устройства каждая заканчивается ошибкой и строкой в
+        // журнале. Замолкаем до повторного открытия.
+        if (!m_outputLost) {
+            m_outputLost = true;
+            qCWarning(m_logOutput)
+                    << "PortMidi output lost, stopping sending until the "
+                       "device is opened again:"
+                    << Pm_GetErrorText(err);
+        }
     } else {
         // Use two qWarnings() to ensure line break works on all operating systems
         qCWarning(m_logOutput) << "Error sending short message"
@@ -232,12 +262,13 @@ bool PortMidiController::sendBytes(const QByteArray& data) {
         return false;
     }
 
-    if (m_pOutputDevice.isNull() || !m_pOutputDevice->isOpen()) {
+    if (m_pOutputDevice.isNull() || !m_pOutputDevice->isOpen() || m_outputLost) {
         return false;
     }
 
     PmError err = m_pOutputDevice->writeSysEx((unsigned char*)data.constData());
     if (err == pmNoError) {
+        m_outputErrorStreak = 0;
         qCDebug(m_logOutput) << QStringLiteral("outgoing: ")
                              << MidiUtils::formatSysexMessage(getName(), data);
         return true;
