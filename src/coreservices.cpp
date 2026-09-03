@@ -739,6 +739,12 @@ void CoreServices::initialize(QApplication* pApp) {
     m_pPlayerManager->loadSamplers();
 
     m_pTouchShift = std::make_unique<ControlPushButton>(ConfigKey("[Controls]", "touch_shift"));
+    // dj-station: на станции это не «модификатор, пока держишь», а режим:
+    // кнопка в меню переключает, идёт ли тап левым или правым кликом (правый
+    // нужен, чтобы пальцем открывать контекстные меню списка). В обычном
+    // режиме Push значение держалось только на время касания, и кнопка не
+    // работала вовсе — касание экрана приходит мгновенным щелчком.
+    m_pTouchShift->setButtonMode(mixxx::control::ButtonMode::Toggle);
 
     // The UI controls must be created here so that controllers can bind to
     // them on startup.
