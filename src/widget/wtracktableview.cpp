@@ -68,6 +68,12 @@ WTrackTableView::WTrackTableView(QWidget* pParent,
     m_pKeyNotation = new ControlProxy(mixxx::library::prefs::kKeyNotationConfigKey, this);
     m_pKeyNotation->connectValueChanged(this, &WTrackTableView::keyNotationChanged);
 
+    // dj-station: этот элемент в Mixxx управляет большой панелью обложки,
+    // которой в нашем скине нет, — кнопка в меню была пустой. Отдаём ей
+    // колонку обложек в списке: и видно, и ощутимо для прокрутки.
+    m_pShowCoverArt = new ControlProxy("[Library]", "show_coverart", this);
+    m_pShowCoverArt->connectValueChanged(this, &WTrackTableView::slotShowCoverArtChanged);
+
     m_pSortColumn = new ControlProxy("[Library]", "sort_column", this);
     m_pSortColumn->connectValueChanged(this, &WTrackTableView::applySortingIfVisible);
     m_pSortOrder = new ControlProxy("[Library]", "sort_order", this);
@@ -189,6 +195,29 @@ void WTrackTableView::pasteFromSidebar() {
 }
 
 // slot
+void WTrackTableView::slotShowCoverArtChanged(double v) {
+    Q_UNUSED(v);
+    applyCoverArtColumnVisibility();
+}
+
+void WTrackTableView::applyCoverArtColumnVisibility() {
+    TrackModel* pTrackModel = getTrackModel();
+    if (!pTrackModel) {
+        return;
+    }
+    // Обобщённый TrackModel умеет искать колонку только по имени поля;
+    // вариант с перечислением есть лишь у моделей на SQL.
+    const int column = pTrackModel->fieldIndex(LIBRARYTABLE_COVERART);
+    if (column < 0) {
+        return;
+    }
+    const bool show = m_pShowCoverArt->toBool();
+    QHeaderView* pHeader = horizontalHeader();
+    if (pHeader && pHeader->isSectionHidden(column) == show) {
+        pHeader->setSectionHidden(column, !show);
+    }
+}
+
 void WTrackTableView::loadTrackModel(QAbstractItemModel* pNewModel, bool restoreState) {
     qDebug() << "WTrackTableView::loadTrackModel()" << pNewModel;
 

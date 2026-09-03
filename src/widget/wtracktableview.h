@@ -150,6 +150,9 @@ class WTrackTableView : public WLibraryTableView {
   private slots:
     void doSortByColumn(int headerSection, Qt::SortOrder sortOrder);
     void applySortingIfVisible();
+    // dj-station: показать или спрятать колонку обложек в списке треков.
+    void slotShowCoverArtChanged(double v);
+    void applyCoverArtColumnVisibility();
     void applySorting();
 
     // Signalled 20 times per second (every 50ms) by GuiTick.
@@ -214,6 +217,8 @@ class WTrackTableView : public WLibraryTableView {
 
     ControlProxy* m_pCOTGuiTick;
     ControlProxy* m_pKeyNotation;
+    // dj-station: кнопка «ОБЛОЖКИ» в меню прячет колонку обложек в списке.
+    ControlProxy* m_pShowCoverArt;
     ControlProxy* m_pSortColumn;
     ControlProxy* m_pSortOrder;
 
