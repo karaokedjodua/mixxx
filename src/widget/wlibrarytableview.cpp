@@ -1,5 +1,8 @@
 #include "widget/wlibrarytableview.h"
 
+#include <QScroller>
+#include <QScrollerProperties>
+
 #include <QApplication>
 #include <QFocusEvent>
 #include <QFontMetrics>
@@ -45,6 +48,30 @@ WLibraryTableView::WLibraryTableView(QWidget* parent,
     //Work around a Qt bug that lets you make your columns so wide you
     //can't reach the divider to make them small again.
     setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+
+    // dj-station: по вертикали Qt по умолчанию прокручивает целыми строками,
+    // а строка у нас 56 пикселей — список идёт рывками. Прокручиваем по
+    // пикселям, как и по горизонтали.
+    setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+
+    // dj-station: станция сенсорная, а пальцем список не прокручивался вовсе —
+    // ни жестов, ни QScroller в Mixxx нет, оставались кнопки и колесо.
+    // Перехватываем только жест касания: перетаскивание трека мышью в деку
+    // работает как раньше.
+    QScroller* pScroller = QScroller::scroller(viewport());
+    QScrollerProperties scrollerProps = pScroller->scrollerProperties();
+    // Без «отскока» на краях: список не должен пружинить под пальцем.
+    scrollerProps.setScrollMetric(
+            QScrollerProperties::VerticalOvershootPolicy,
+            QVariant::fromValue(QScrollerProperties::OvershootAlwaysOff));
+    scrollerProps.setScrollMetric(
+            QScrollerProperties::HorizontalOvershootPolicy,
+            QVariant::fromValue(QScrollerProperties::OvershootAlwaysOff));
+    // Палец должен «цеплять» список сразу, без порога и задержки.
+    scrollerProps.setScrollMetric(QScrollerProperties::DragStartDistance, 0.004);
+    scrollerProps.setScrollMetric(QScrollerProperties::DragVelocitySmoothingFactor, 0.6);
+    pScroller->setScrollerProperties(scrollerProps);
+    QScroller::grabGesture(viewport(), QScroller::TouchGesture);
 
     verticalHeader()->hide();
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
