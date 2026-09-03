@@ -182,14 +182,31 @@ bool shouldLinkInputToOutput(const QString& input_name,
 QList<Controller*> PortMidiEnumerator::queryDevices() {
     qDebug() << "Scanning PortMIDI devices:";
 
-    int iNumDevices = Pm_CountDevices();
-
     QListIterator<Controller*> dev_it(m_devices);
     while (dev_it.hasNext()) {
         delete dev_it.next();
     }
 
     m_devices.clear();
+
+    // dj-station: PortMidi составляет таблицу устройств один раз, в
+    // Pm_Initialize(), и дальше только читает её. Значит переподключённый
+    // пульт в повторном скане не появится, а старые номера на Windows уже
+    // указывают не туда. Перед повторным сканом поднимаем PortMidi заново -
+    // открытых потоков здесь уже нет, деструкторы выше их закрыли.
+    if (m_bScanned) {
+        PmError termErr = Pm_Terminate();
+        if (termErr != pmNoError) {
+            qWarning() << "PortMidi error on re-scan:" << Pm_GetErrorText(termErr);
+        }
+        PmError initErr = Pm_Initialize();
+        if (initErr != pmNoError) {
+            qWarning() << "PortMidi error on re-scan:" << Pm_GetErrorText(initErr);
+        }
+    }
+    m_bScanned = true;
+
+    int iNumDevices = Pm_CountDevices();
 
     const PmDeviceInfo* inputDeviceInfo = nullptr;
     const PmDeviceInfo* outputDeviceInfo = nullptr;

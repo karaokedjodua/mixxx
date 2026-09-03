@@ -13,6 +13,9 @@
 #include "control/controlproxy.h"
 #include "library/dao/playlistdao.h"
 #include "library/trackcollection.h"
+#include "controllers/controller.h"
+#include "controllers/controllermanager.h"
+#include "soundio/soundmanager.h"
 #include "library/trackcollectionmanager.h"
 #include "mixer/basetrackplayer.h"
 #include "mixer/playerinfo.h"
@@ -59,10 +62,14 @@ int parseDeckNumber(const QByteArray& segment) {
 
 RemoteApiHandler::RemoteApiHandler(PlayerManager* pPlayerManager,
         TrackCollectionManager* pTrackCollectionManager,
+        ControllerManager* pControllerManager,
+        SoundManager* pSoundManager,
         QObject* parent)
         : QObject(parent),
           m_pPlayerManager(pPlayerManager),
-          m_pTrackCollectionManager(pTrackCollectionManager) {
+          m_pTrackCollectionManager(pTrackCollectionManager),
+          m_pControllerManager(pControllerManager),
+          m_pSoundManager(pSoundManager) {
     m_flushTimer.setSingleShot(true);
     m_flushTimer.setInterval(kFlushIntervalMs);
     connect(&m_flushTimer, &QTimer::timeout, this, &RemoteApiHandler::slotFlushControlEvents);
@@ -160,6 +167,19 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
         o.insert(QStringLiteral("sound_status"), sound);
         o.insert(QStringLiteral("sound_ready"), sound == SOUNDMANAGER_CONNECTED);
         o.insert(QStringLiteral("decks"), m_pPlayerManager->numberOfDecks());
+        // Сколько пультов Mixxx реально держит открытыми. Сторожу этого хватает,
+        // чтобы чинить состояние, а не ловить момент переподключения: пульт на
+        // шине есть, а открытых ноль - значит пора пересканировать.
+        int openControllers = 0;
+        if (m_pControllerManager) {
+            const QList<Controller*> controllers = m_pControllerManager->getControllers();
+            for (const Controller* pController : controllers) {
+                if (pController->isOpen()) {
+                    openControllers++;
+                }
+            }
+        }
+        o.insert(QStringLiteral("controllers_open"), openControllers);
         reply(pReply, 200, o);
         return;
     }
@@ -203,6 +223,15 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
         } else {
             handleControlsList(pReply);
         }
+        return;
+    }
+
+    if (resource == "devices") {
+        if (parts.size() >= 4 && parts[3] == "rescan") {
+            handleDevicesRescan(method, query, pReply);
+            return;
+        }
+        replyError(pReply, 404, QStringLiteral("unknown devices call"));
         return;
     }
 
@@ -513,6 +542,72 @@ void RemoteApiHandler::handleLibraryAnalysis(const QByteArray& body, RemoteApiRe
 //   GET  -> {playlists:[{id,name,tracks,locked}]}
 //   POST {name, track_ids:[...], replace:true, autodj:""|"top"|"bottom"}
 //        -> {id, name, created, tracks}
+// dj-station: выдернутый пульт Mixxx сам не подхватывает - горячего
+// подключения устройств в нём нет, и до сих пор это лечилось перезапуском
+// Mixxx, то есть обрывом музыки посреди вечера. DDJ-SX для станции - одно
+// устройство и для нот, и для звука, поэтому поднимаем обе половины.
+void RemoteApiHandler::handleDevicesRescan(const QByteArray& method,
+        const QByteArray& query,
+        RemoteApiReply* pReply) {
+    if (method != "POST") {
+        replyError(pReply, 405, QStringLiteral("POST required"));
+        return;
+    }
+
+    const QMap<QByteArray, QByteArray> q = remoteapi::parseQuery(query);
+    const auto flag = [&q](const char* name, bool byDefault) {
+        const auto it = q.find(QByteArray(name));
+        if (it == q.end()) {
+            return byDefault;
+        }
+        return it.value() != QByteArrayLiteral("0");
+    };
+    const bool wantAudio = flag("audio", true);
+    const bool wantMidi = flag("midi", true);
+    const bool force = flag("force", false);
+
+    QJsonObject result;
+
+    // Звук. Переоткрывать живую карту нельзя без причины: это разрыв звука
+    // посреди сета, а на этой машине ещё и полтора гигабайта невозвращённой
+    // памяти за вызов. Поэтому по умолчанию трогаем, только когда звука нет.
+    const bool audioAlive = controlOrZero(QStringLiteral("[SoundManager]"),
+                                    QStringLiteral("status")) ==
+            SOUNDMANAGER_CONNECTED;
+    if (!m_pSoundManager || !wantAudio) {
+        result.insert(QStringLiteral("audio"), audioAlive);
+        result.insert(QStringLiteral("audioReopened"), false);
+    } else if (audioAlive && !force) {
+        result.insert(QStringLiteral("audio"), true);
+        result.insert(QStringLiteral("audioReopened"), false);
+    } else {
+        // clearAndQueryDevices закрывает карты и заново перечисляет их через
+        // PortAudio; setupDevices открывает их ТЕМ ЖЕ конфигом, так что
+        // маршрутизация Master/Headphones остаётся как была.
+        m_pSoundManager->clearAndQueryDevices();
+        const SoundDeviceStatus status = m_pSoundManager->setupDevices();
+        const bool ok = status == SoundDeviceStatus::Ok;
+        result.insert(QStringLiteral("audio"), ok);
+        result.insert(QStringLiteral("audioReopened"), true);
+        if (!ok) {
+            result.insert(QStringLiteral("audioError"),
+                    m_pSoundManager->getLastErrorMessage(status));
+        }
+    }
+
+    // Пульт. Запрос уходит в поток контроллеров очередью - здесь только просим,
+    // поэтому "true" значит "попросили", а не "открылся". Открылся или нет,
+    // видно по controllers_open в /api/status.
+    if (m_pControllerManager && wantMidi) {
+        m_pControllerManager->setUpDevices();
+        result.insert(QStringLiteral("midi"), true);
+    } else {
+        result.insert(QStringLiteral("midi"), false);
+    }
+
+    reply(pReply, 200, result);
+}
+
 void RemoteApiHandler::handleLibraryPlaylists(const QByteArray& method,
         const QByteArray& idPart,
         const QByteArray& body,

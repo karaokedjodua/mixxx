@@ -16,6 +16,8 @@
 
 class ControlProxy;
 class PlayerManager;
+class ControllerManager;
+class SoundManager;
 class TrackCollectionManager;
 
 namespace mixxx {
@@ -43,6 +45,8 @@ class RemoteApiHandler : public QObject {
   public:
     RemoteApiHandler(PlayerManager* pPlayerManager,
             TrackCollectionManager* pTrackCollectionManager,
+            ControllerManager* pControllerManager = nullptr,
+            SoundManager* pSoundManager = nullptr,
             QObject* parent = nullptr);
     ~RemoteApiHandler() override;
 
@@ -89,6 +93,11 @@ class RemoteApiHandler : public QObject {
     /// сетки, тональность, горячие метки. Так на станцию попадают данные
     /// VirtualDJ без пересчёта на слабом планшете.
     void handleLibraryAnalysis(const QByteArray& body, RemoteApiReply* pReply);
+    /// Поднять звуковую карту и пульт заново, не перезапуская Mixxx.
+    void handleDevicesRescan(const QByteArray& method,
+            const QByteArray& query,
+            RemoteApiReply* pReply);
+
     void handleLibraryPlaylists(const QByteArray& method,
             const QByteArray& idPart,
             const QByteArray& body,
@@ -96,6 +105,8 @@ class RemoteApiHandler : public QObject {
 
     PlayerManager* m_pPlayerManager;
     TrackCollectionManager* m_pTrackCollectionManager;
+    ControllerManager* m_pControllerManager;
+    SoundManager* m_pSoundManager;
     QHash<QString, ControlProxy*> m_proxies;
     QHash<QString, double> m_pendingControls;
     QTimer m_flushTimer;

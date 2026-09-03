@@ -1,5 +1,7 @@
 #include "controllers/dlgprefcontrollers.h"
 
+#include <QTimer>
+
 #include "control/controlproxy.h"
 #include "controllers/controller.h"
 #include "controllers/controllermanager.h"
@@ -116,7 +118,33 @@ void DlgPrefControllers::openLocalFile(const QString& file) {
     mixxx::DesktopHelper::openUrl(QUrl::fromLocalFile(file));
 }
 
+// Страница на один контроллер стоит на этой машине шесть с половиной
+// гигабайт и полторы минуты построения: таблицы маппинга DDJ-SX - это под
+// тысячу строк, и каждая тянет меню выбора управления по всем декам,
+// эффектам и 32 сэмплерам. Держать это открытым всё время работы станции
+// незачем: закрыли настройки - отпустили. Отпускаем не здесь, а следующим
+// проходом цикла событий: сигнал закрытия сейчас идёт по тому самому
+// списку страниц, который снос меняет.
+void DlgPrefControllers::slotHide() {
+    QTimer::singleShot(0, this, [this]() {
+        destroyControllerWidgets();
+        m_bWidgetsStale = true;
+    });
+}
+
 void DlgPrefControllers::slotUpdate() {
+    // Диалог открывают - пора построить страницы. НЕ прямо здесь: этот слот
+    // вызван из emit showDlg(), а построение страницы добавляет и удаляет
+    // записи в том же списке, по которому сигнал сейчас идёт. Первая попытка
+    // делать это на месте подвесила Mixxx на несколько минут и раздула его до
+    // шести гигабайт. Откладываем на следующий проход цикла событий.
+    if (!m_bWidgetsStale) {
+        return;
+    }
+    m_bWidgetsStale = false;
+    QTimer::singleShot(0, this, [this]() {
+        setupControllerWidgets();
+    });
 }
 
 void DlgPrefControllers::slotCancel() {
@@ -162,6 +190,17 @@ bool DlgPrefControllers::handleTreeItemClick(QTreeWidgetItem* clickedItem) {
 }
 
 void DlgPrefControllers::rescanControllers() {
+    // dj-station: пересборка стоит около гигабайта (меню выбора управления на
+    // каждый контроллер: деки, эффекты, 32 сэмплера). Пока диалог скрыт -
+    // а на станции он скрыт всегда, - откладываем её до показа.
+    if (m_pDlgPreferences && !m_pDlgPreferences->isVisible()) {
+        // Страницы сносим сразу: они держат Controller*, которые перечисление
+        // только что удалило. Снос дёшев, дорого именно построение - его и
+        // откладываем до показа.
+        destroyControllerWidgets();
+        m_bWidgetsStale = true;
+        return;
+    }
     destroyControllerWidgets();
     setupControllerWidgets();
 }

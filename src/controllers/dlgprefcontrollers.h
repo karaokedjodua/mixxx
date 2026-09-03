@@ -32,6 +32,8 @@ class DlgPrefControllers : public DlgPreferencePage, public Ui::DlgPrefControlle
   public slots:
     /// Called when the preference dialog (not this page) is shown to the user.
     void slotUpdate() override;
+    /// Настройки закрыли - отпустить страницы контроллеров.
+    void slotHide() override;
     /// Called when the user clicks the global "Apply" button.
     void slotApply() override;
     /// Called when the user clicks the global "Cancel" button.
@@ -56,6 +58,8 @@ class DlgPrefControllers : public DlgPreferencePage, public Ui::DlgPrefControlle
     void openLocalFile(const QString& file);
 
     DlgPreferences* m_pDlgPreferences;
+    /// Список устройств поменялся, а страницы ещё старые.
+    bool m_bWidgetsStale{false};
     UserSettingsPointer m_pConfig;
     std::shared_ptr<ControllerManager> m_pControllerManager;
     QTreeWidgetItem* m_pControllersRootItem;

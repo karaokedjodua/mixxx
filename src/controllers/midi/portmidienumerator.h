@@ -13,6 +13,9 @@ class PortMidiEnumerator : public MidiEnumerator {
     QList<Controller*> queryDevices() override;
 
   private:
+    /// Первый скан идёт на свежем Pm_Initialize из конструктора; повторные
+    /// требуют переинициализации PortMidi, иначе список останется стартовым.
+    bool m_bScanned{false};
     QList<Controller*> m_devices;
     UserSettingsPointer m_pConfig;
 };
