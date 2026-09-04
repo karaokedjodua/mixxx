@@ -793,7 +793,8 @@ void CoreServices::initialize(QApplication* pApp) {
                     m_pPlayerManager.get(),
                     m_pTrackCollectionManager.get(),
                     m_pControllerManager.get(),
-                    m_pSoundManager.get());
+                    m_pSoundManager.get(),
+                    m_pLibrary.get());
             m_pRemoteApiServer = std::make_shared<mixxx::RemoteApiServer>(
                     m_pRemoteApiHandler.get(), apiSettings);
             if (!m_pRemoteApiServer->start()) {

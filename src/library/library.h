@@ -133,6 +133,13 @@ class Library: public QObject {
   signals:
     void showTrackModel(QAbstractItemModel* model, bool restoreState = true);
     void switchToView(const QString& view);
+    void loadTraжно, чтобы фонотеку можно было прогнать на быстрой
+    /// машине, а не на планшете, где один трек со стемами считается 306 с.
+    void analyzeTracksById(const QList<TrackId>& trackIds);
+
+  signals:
+    void showTrackModel(QAbstractItemModel* model, bool restoreState = true);
+    void switchToView(const QString& view);
     void loadTrack(TrackPointer pTrack);
 #ifdef __STEM__
     void loadTrackToPlayer(TrackPointer pTrack,

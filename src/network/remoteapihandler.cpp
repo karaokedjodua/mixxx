@@ -13,6 +13,7 @@
 #include "control/controlobject.h"
 #include "control/controlproxy.h"
 #include "library/dao/playlistdao.h"
+#include "library/library.h"
 #include "library/trackcollection.h"
 #include "controllers/controller.h"
 #include "controllers/controllermanager.h"
@@ -41,6 +42,9 @@ const Logger kLogger("RemoteApiHandler");
 // 15 раз в секунду на деку, и без склейки поток событий захлебнётся.
 constexpr int kFlushIntervalMs = 66;
 
+// Длина фразы в битах - та же, что у сведения по фразе (BpmControl).
+constexpr int kPhraseBeats = 32;
+
 QByteArray toJson(const QJsonObject& obj) {
     return QJsonDocument(obj).toJson(QJsonDocument::Compact);
 }
@@ -65,12 +69,14 @@ RemoteApiHandler::RemoteApiHandler(PlayerManager* pPlayerManager,
         TrackCollectionManager* pTrackCollectionManager,
         ControllerManager* pControllerManager,
         SoundManager* pSoundManager,
+        Library* pLibrary,
         QObject* parent)
         : QObject(parent),
           m_pPlayerManager(pPlayerManager),
           m_pTrackCollectionManager(pTrackCollectionManager),
           m_pControllerManager(pControllerManager),
-          m_pSoundManager(pSoundManager) {
+          m_pSoundManager(pSoundManager),
+          m_pLibrary(pLibrary) {
     m_flushTimer.setSingleShot(true);
     m_flushTimer.setInterval(kFlushIntervalMs);
     connect(&m_flushTimer, &QTimer::timeout, this, &RemoteApiHandler::slotFlushControlEvents);
@@ -185,6 +191,20 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
         return;
     }
 
+    if (resource == "ui") {
+        // Состояние экрана одним запросом. Экранная клавиатура опрашивает его
+        // четыре раза в секунду, чтобы ходить за фокусом; два отдельных
+        // запроса к /api/control стоили бы вдвое дороже, а обработчик живёт
+        // в главном потоке - это прямая задержка интерфейса.
+        QJsonObject o;
+        o.insert(QStringLiteral("tab"),
+                controlOrZero(QStringLiteral("[Tab]"), QStringLiteral("current")));
+        o.insert(QStringLiteral("focus"),
+                controlOrZero(QStringLiteral("[Library]"), QStringLiteral("focused_widget")));
+        reply(pReply, 200, o);
+        return;
+    }
+
     if (resource == "decks") {
         if (parts.size() == 3) {
             QJsonArray arr;
@@ -243,6 +263,44 @@ void RemoteApiHandler::handleNow(const QByteArray& method,
                 return;
             }
             handleLibraryAnalysis(body, pReply);
+            return;
+        }
+        // POST /api/library/analyze {"ids": [1,2,3]} - поставить треки в
+        // очередь анализа. Нужно, чтобы фонотеку можно было прогнать на
+        // быстрой машине: на планшете один трек со стемами считается 306 с,
+        // и во время сета волна не успевает появиться.
+        if (parts.size() >= 4 && parts[3] == "analyze") {
+            if (method != "POST") {
+                replyError(pReply, 405, QStringLiteral("POST required"));
+                return;
+            }
+            if (!m_pLibrary) {
+                replyError(pReply, 503, QStringLiteral("no library"));
+                return;
+            }
+            QJsonParseError err{};
+            const QJsonDocument doc = QJsonDocument::fromJson(body, &err);
+            if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+                replyError(pReply, 400, QStringLiteral("bad json"));
+                return;
+            }
+            const QJsonArray ids = doc.object().value(QStringLiteral("ids")).toArray();
+            QList<TrackId> trackIds;
+            trackIds.reserve(ids.size());
+            for (const QJsonValue& v : ids) {
+                const TrackId id(v.toVariant());
+                if (id.isValid()) {
+                    trackIds.append(id);
+                }
+            }
+            if (trackIds.isEmpty()) {
+                replyError(pReply, 400, QStringLiteral("no valid ids"));
+                return;
+            }
+            m_pLibrary->analyzeTracksById(trackIds);
+            QJsonObject o;
+            o.insert(QStringLiteral("scheduled"), trackIds.size());
+            reply(pReply, 200, o);
             return;
         }
         if (parts.size() >= 4 && parts[3] == "playlists") {
@@ -328,6 +386,9 @@ void RemoteApiHandler::handleDeckAction(int deckNumber,
         pressButton(group, QStringLiteral("cue_default"));
     } else if (action == "sync") {
         pressButton(group, QStringLiteral("beatsync"));
+    } else if (action == "phrase") {
+        // dj-station: сведение по фразе (32 бита), как по «квадратикам» VDJ.
+        pressButton(group, QStringLiteral("beatsync_phrase"));
     } else if (action == "eject") {
         // На играющей деке eject молча игнорируется — сначала останавливаем.
         if (ControlObject::get(playKey) > 0.5) {
@@ -479,10 +540,12 @@ void RemoteApiHandler::handleLibraryAnalysis(const QByteArray& body, RemoteApiRe
         if (anchorSec < 0.0) {
             // У VirtualDJ первый удар сетки может лежать «до» начала файла.
             // Зажимать такой якорь в 0 нельзя — сетка съедет на |якорь|.
-            // Сетка периодична: сдвигаем якорь на целое число периодов
-            // бита вперёд, фаза при этом сохраняется.
-            const double periodSec = 60.0 / bpmValue;
-            anchorSec += periodSec * std::ceil(-anchorSec / periodSec);
+            // Сетка периодична: сдвигаем якорь вперёд на целое число ФРАЗ
+            // (32 бита), а не битов. Сдвиг на отдельные биты сохранил бы долю,
+            // но провернул бы фазу такта и фразы — а разметку «квадратиками»
+            // и сведение по фразе мы считаем именно от первого удара сетки.
+            const double phraseSec = 60.0 / bpmValue * kPhraseBeats;
+            anchorSec += phraseSec * std::ceil(-anchorSec / phraseSec);
         }
         const mixxx::audio::FramePos anchor(anchorSec * rate);
         const auto pBeats = mixxx::Beats::fromConstTempo(

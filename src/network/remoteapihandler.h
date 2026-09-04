@@ -17,6 +17,7 @@
 class ControlProxy;
 class PlayerManager;
 class ControllerManager;
+class Library;
 class SoundManager;
 class TrackCollectionManager;
 
@@ -47,6 +48,7 @@ class RemoteApiHandler : public QObject {
             TrackCollectionManager* pTrackCollectionManager,
             ControllerManager* pControllerManager = nullptr,
             SoundManager* pSoundManager = nullptr,
+            Library* pLibrary = nullptr,
             QObject* parent = nullptr);
     ~RemoteApiHandler() override;
 
@@ -107,6 +109,8 @@ class RemoteApiHandler : public QObject {
     TrackCollectionManager* m_pTrackCollectionManager;
     ControllerManager* m_pControllerManager;
     SoundManager* m_pSoundManager;
+    /// Нужна только чтобы ставить треки в очередь анализа снаружи.
+    Library* m_pLibrary;
     QHash<QString, ControlProxy*> m_proxies;
     QHash<QString, double> m_pendingControls;
     QTimer m_flushTimer;

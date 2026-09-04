@@ -4,6 +4,15 @@
 #include "moc_wkey.cpp"
 #include "skin/legacy/skincontext.h"
 #include "track/keyutils.h"
+#include "util/color/predefinedcolorpalettes.h"
+
+// static
+std::optional<ColorPalette> WKey::s_keyColorPalette;
+
+// static
+void WKey::setKeyColorPalette(const ColorPalette& palette) {
+    s_keyColorPalette = palette;
+}
 
 WKey::WKey(const QString& group, QWidget* pParent)
         : WLabel(pParent),
@@ -56,6 +65,31 @@ void WKey::setValue(double dValue) {
     } else {
         setText("");
     }
+    applyKeyColor(key);
+}
+
+void WKey::applyKeyColor(mixxx::track::io::key::ChromaticKey key) {
+    // Цвет тональности в деке - тот же, что у колонки «Тональность» в
+    // фонотеке. Так следующий трек подбирается глазами: увидел цвет деки,
+    // ищешь в списке такой же или соседний.
+    const ColorPalette& palette = s_keyColorPalette.has_value()
+            ? s_keyColorPalette.value()
+            : mixxx::PredefinedColorPalettes::kDefaultKeyColorPalette;
+    const QColor color = (key == mixxx::track::io::key::INVALID)
+            ? QColor()
+            : KeyUtils::keyToColor(key, palette);
+    if (color == m_appliedColor) {
+        return;
+    }
+    m_appliedColor = color;
+    if (!color.isValid()) {
+        // Трека нет - возвращаем оформление скина.
+        setStyleSheet(QString());
+        return;
+    }
+    // Заливаем не фоном, а текстом и рамкой: цифра остаётся читаемой на любом
+    // цвете палитры, а рамка видна с расстояния вытянутой руки.
+    setStyleSheet(QStringLiteral("color: %1; border-color: %1;").arg(color.name()));
 }
 
 void WKey::setCents() {

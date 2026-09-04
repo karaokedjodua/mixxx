@@ -785,6 +785,23 @@ void Library::slotRestoreCurrentViewState() const {
     }
 }
 
+void Library::analyzeTracksById(const QList<TrackId>& trackIds) {
+    // dj-station: очередь анализа снаружи. Сигнал analyzeTracks уже подключён
+    // к AnalysisFeature - здесь только оборачиваем идентификаторы, чтобы
+    // сетевому управлению не нужно было знать про внутренние типы анализа.
+    QList<AnalyzerScheduledTrack> tracks;
+    tracks.reserve(trackIds.size());
+    for (const auto& trackId : trackIds) {
+        if (trackId.isValid()) {
+            tracks.append(AnalyzerScheduledTrack(trackId));
+        }
+    }
+    if (tracks.isEmpty()) {
+        return;
+    }
+    emit analyzeTracks(tracks);
+}
+
 LibraryTableModel* Library::trackTableModel() const {
     VERIFY_OR_DEBUG_ASSERT(m_pMixxxLibraryFeature) {
         return nullptr;

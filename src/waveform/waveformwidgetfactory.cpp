@@ -805,10 +805,26 @@ void WaveformWidgetFactory::setPlayMarkerPosition(double position) {
 
 void WaveformWidgetFactory::notifyZoomChange(WWaveformViewer* viewer) {
     WaveformWidgetAbstract* pWaveformWidget = viewer->getWaveformWidget();
-    if (pWaveformWidget == nullptr || !isZoomSync()) {
+    if (pWaveformWidget == nullptr) {
         return;
     }
     double refZoom = pWaveformWidget->getZoom();
+
+    // dj-station: масштаб волны, выставленный кнопками скина или пультом,
+    // обязан пережить закрытие программы. Раньше в настройки писала только
+    // страница настроек Mixxx, а её на станции не открывают (она тут строится
+    // десятками секунд) - и после каждого запуска волна возвращалась к
+    // заводскому масштабу.
+    m_defaultZoom = math_clamp(refZoom,
+            WaveformWidgetRenderer::s_waveformMinZoom,
+            WaveformWidgetRenderer::s_waveformMaxZoom);
+    if (m_config) {
+        m_config->setValue(kDefaultZoomKey, m_defaultZoom);
+    }
+
+    if (!isZoomSync()) {
+        return;
+    }
 
     for (const auto& holder : std::as_const(m_waveformWidgetHolders)) {
         if (holder.m_waveformViewer != viewer) {

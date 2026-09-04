@@ -1,12 +1,13 @@
 #include "waveform/renderers/allshader/waveformrenderbeat.h"
 
 #include <QDomNode>
+#include <QVector4D>
 
 #include "engine/engine.h"
 #include "moc_waveformrenderbeat.cpp"
 #include "rendergraph/geometry.h"
-#include "rendergraph/material/unicolormaterial.h"
-#include "rendergraph/vertexupdaters/vertexupdater.h"
+#include "rendergraph/material/rgbamaterial.h"
+#include "rendergraph/vertexupdaters/rgbavertexupdater.h"
 #include "skin/legacy/skincontext.h"
 #include "track/track.h"
 #include "waveform/renderers/waveformwidgetrenderer.h"
@@ -17,19 +18,37 @@
 using namespace rendergraph;
 
 namespace {
-// «Квадратики» как в VirtualDJ: на каждом такте (4 бита) маленький,
-// на границе 16 бит — крупнее, на границе 32 бит (фраза) — самый крупный.
-// Различаем уровни ТОЛЩИНОЙ линии и размером квадратика: один цвет,
-// один material, один draw call — на слабом планшете это бесплатно.
+// Разметка волны как в VirtualDJ: бит - тонкая тусклая риска, такт (4 бита) -
+// заметнее и с квадратиком, 16 и 32 бита - границы фраз, по которым и сводят.
+//
+// Почему уровни различаются ЯРКОСТЬЮ, а не только шириной: раньше вся сетка
+// рисовалась одним цветом на 90 % непрозрачности, и полсотни белых линий
+// забивали саму волну - смотреть было не на что. Теперь бит едва виден, а
+// глаз цепляется за такты и фразы, то есть ровно за то, по чему выравнивают.
+//
+// Почему это по-прежнему один вызов отрисовки: RGBAMaterial берёт цвет из
+// вершины, поэтому разные уровни живут в одной геометрии. Планшет слабый,
+// второй проход по волне мы себе позволить не можем.
 constexpr int kBarBeats = 4;
 constexpr int kPhraseBeats16 = 16;
 constexpr int kPhraseBeats32 = 32;
+
 constexpr float kBeatWidth = 1.f;
 constexpr float kBarWidth = 2.f;
-constexpr float kPhraseWidth = 4.f;
-constexpr float kBarMark = 6.f;       // сторона квадратика такта
-constexpr float kPhraseMark16 = 10.f; // сторона квадратика на 16 битах
-constexpr float kPhraseMark32 = 16.f; // сторона квадратика на 32 битах
+constexpr float kPhraseWidth = 3.f;
+
+// Доля от общей непрозрачности сетки ([Waveform] beatGridAlpha).
+constexpr float kBeatAlpha = 0.28f;
+constexpr float kBarAlpha = 0.60f;
+constexpr float kPhraseAlpha = 1.0f;
+
+constexpr float kBarMark = 5.f;        // сторона квадратика такта
+constexpr float kPhraseMark16 = 9.f;   // сторона квадратика на 16 битах
+constexpr float kPhraseMark32 = 13.f;  // сторона квадратика на фразе (32)
+
+// Если соседние риски ближе этого, они сливаются в сплошную заливку: рисовать
+// их бессмысленно и дорого. На мелком масштабе уровень просто выключается.
+constexpr float kMinGapPx = 6.f;
 
 inline int positiveMod(int v, int m) {
     const int r = v % m;
@@ -43,7 +62,7 @@ WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidget,
         ::WaveformRendererAbstract::PositionSource type)
         : ::WaveformRendererAbstract(waveformWidget),
           m_isSlipRenderer(type == ::WaveformRendererAbstract::Slip) {
-    initForRectangles<UniColorMaterial>(0);
+    initForRectangles<RGBAMaterial>(0);
     setUsePreprocess(true);
 }
 
@@ -92,7 +111,7 @@ bool WaveformRenderBeat::preprocessInner() {
 
     const float devicePixelRatio = m_waveformRenderer->getDevicePixelRatio();
 
-    m_color.setAlphaF(alpha / 100.0f);
+    const float gridAlpha = alpha / 100.0f;
 
     const double trackSamples = m_waveformRenderer->getTrackSamples();
     if (trackSamples <= 0.0) {
@@ -122,39 +141,80 @@ bool WaveformRenderBeat::preprocessInner() {
     //   int numBearsInRange = trackBeats->numBeatsInRange(startPosition, endPosition);
     // for this, but there have been reports of that method failing with a DEBUG_ASSERT.
     int numBeatsInRange = 0;
-    int numMarksInRange = 0;
+    int numBarsInRange = 0;
+    int numPhrasesInRange = 0;
+    // Абсолютный индекс первого видимого бита - разностью итераторов от начала
+    // трека. Такты и фразы отсчитываются от первого удара сетки, как в VDJ.
+    const int firstBeatIndex = static_cast<int>(
+            trackBeats->iteratorFrom(startPosition) -
+            trackBeats->iteratorFrom(mixxx::audio::kStartFramePos));
     {
         auto it = trackBeats->iteratorFrom(startPosition);
-        // Абсолютный индекс первого видимого бита — разностью итераторов от
-        // начала трека. Фразы и такты считаются от первого удара сетки.
-        int beatIndex = static_cast<int>(it - trackBeats->iteratorFrom(
-                                                     mixxx::audio::kStartFramePos));
+        int beatIndex = firstBeatIndex;
         for (; it != trackBeats->cend() && *it <= endPosition; ++it, ++beatIndex) {
-            numBeatsInRange++;
-            if (positiveMod(beatIndex, kBarBeats) == 0) {
-                numMarksInRange++;
+            if (positiveMod(beatIndex, kPhraseBeats16) == 0) {
+                numPhrasesInRange++;
+            } else if (positiveMod(beatIndex, kBarBeats) == 0) {
+                numBarsInRange++;
+            } else {
+                numBeatsInRange++;
             }
         }
     }
 
+    const int totalBeats = numBeatsInRange + numBarsInRange + numPhrasesInRange;
+    if (totalBeats == 0) {
+        return false;
+    }
+
+    // Сколько пикселей между соседними битами на этом масштабе. Отсюда решаем,
+    // какие уровни вообще имеет смысл рисовать.
+    const float rendererLength = static_cast<float>(m_waveformRenderer->getLength());
+    const float beatGapPx = totalBeats > 1
+            ? rendererLength / static_cast<float>(totalBeats - 1)
+            : rendererLength;
+    const bool drawBeats = beatGapPx >= kMinGapPx;
+    const bool drawBars = beatGapPx * kBarBeats >= kMinGapPx;
+
     const int numBoxesPerBeat = (m_isSlipRenderer && splitStemTracks)
             ? mixxx::kMaxSupportedStems
             : 1;
-    // Каждому такту нужен ещё один прямоугольник под квадратик.
-    const int reserved = (numBeatsInRange * numBoxesPerBeat + numMarksInRange) *
-            numVerticesPerLine;
+    // Линии рисуются столбиком на каждую дорожку стема, квадратики - один раз.
+    const int numLines = numPhrasesInRange +
+            (drawBars ? numBarsInRange : 0) +
+            (drawBeats ? numBeatsInRange : 0);
+    const int numMarks = numPhrasesInRange + (drawBars ? numBarsInRange : 0);
+    const int reserved = (numLines * numBoxesPerBeat + numMarks) * numVerticesPerLine;
     geometry().allocate(reserved);
 
-    VertexUpdater vertexUpdater{geometry().vertexDataAs<Geometry::Point2D>()};
+    RGBAVertexUpdater vertexUpdater{
+            geometry().vertexDataAs<Geometry::RGBAColoredPoint2D>()};
+
+    const float r = static_cast<float>(m_color.redF());
+    const float g = static_cast<float>(m_color.greenF());
+    const float b = static_cast<float>(m_color.blueF());
+    const QVector4D beatColor{r, g, b, gridAlpha * kBeatAlpha};
+    const QVector4D barColor{r, g, b, gridAlpha * kBarAlpha};
+    const QVector4D phraseColor{r, g, b, gridAlpha * kPhraseAlpha};
 
     const float boxBreadth = splitStemTracks
             ? rendererBreadth / static_cast<float>(mixxx::kMaxSupportedStems)
             : rendererBreadth;
 
     auto it = trackBeats->iteratorFrom(startPosition);
-    int beatIndex = static_cast<int>(it - trackBeats->iteratorFrom(
-                                                 mixxx::audio::kStartFramePos));
+    int beatIndex = firstBeatIndex;
     for (; it != trackBeats->cend() && *it <= endPosition; ++it, ++beatIndex) {
+        const bool isPhrase32 = positiveMod(beatIndex, kPhraseBeats32) == 0;
+        const bool isPhrase16 = positiveMod(beatIndex, kPhraseBeats16) == 0;
+        const bool isBar = !isPhrase16 && positiveMod(beatIndex, kBarBeats) == 0;
+
+        if (isBar && !drawBars) {
+            continue;
+        }
+        if (!isBar && !isPhrase16 && !drawBeats) {
+            continue;
+        }
+
         double beatPosition = it->toEngineSamplePos();
         double xBeatPoint =
                 m_waveformRenderer->transformSamplePositionInRendererWorld(
@@ -162,12 +222,8 @@ bool WaveformRenderBeat::preprocessInner() {
 
         xBeatPoint = qRound(xBeatPoint * devicePixelRatio) / devicePixelRatio;
 
-        const bool isPhrase32 = positiveMod(beatIndex, kPhraseBeats32) == 0;
-        const bool isPhrase16 = positiveMod(beatIndex, kPhraseBeats16) == 0;
-        const bool isBar = positiveMod(beatIndex, kBarBeats) == 0;
-        const float width = isPhrase16 ? kPhraseWidth
-                : isBar                  ? kBarWidth
-                                         : kBeatWidth;
+        const float width = isPhrase16 ? kPhraseWidth : (isBar ? kBarWidth : kBeatWidth);
+        const QVector4D& color = isPhrase16 ? phraseColor : (isBar ? barColor : beatColor);
 
         const float x1 = static_cast<float>(xBeatPoint);
         const float x2 = x1 + width;
@@ -176,27 +232,27 @@ bool WaveformRenderBeat::preprocessInner() {
             for (int stemIdx = 0; stemIdx < mixxx::kMaxSupportedStems; ++stemIdx) {
                 const float posy1 = stemIdx * boxBreadth;
                 const float posy2 = posy1 + boxBreadth / 2.f;
-                vertexUpdater.addRectangle({x1, posy1}, {x2, posy2});
+                vertexUpdater.addRectangle({x1, posy1}, {x2, posy2}, color);
             }
         } else {
             vertexUpdater.addRectangle({x1, 0.f},
-                    {x2, m_isSlipRenderer ? rendererBreadth / 2 : rendererBreadth});
+                    {x2, m_isSlipRenderer ? rendererBreadth / 2 : rendererBreadth},
+                    color);
         }
 
-        // «Квадратик» у верхнего края волны: на каждом такте маленький,
-        // на границе 16 бит крупнее, на фразе (32 бита) — самый крупный.
-        if (isBar) {
+        // «Квадратик» у верхнего края волны: на такте маленький, на 16 битах
+        // крупнее, на фразе (32 бита) - самый крупный. По ним и сводят.
+        if (isBar || isPhrase16) {
             const float mark = isPhrase32 ? kPhraseMark32
-                    : isPhrase16          ? kPhraseMark16
-                                          : kBarMark;
-            vertexUpdater.addRectangle({x1 - mark / 2.f, 0.f}, {x1 + mark / 2.f, mark});
+                    : (isPhrase16 ? kPhraseMark16 : kBarMark);
+            vertexUpdater.addRectangle(
+                    {x1 - mark / 2.f, 0.f}, {x1 + mark / 2.f, mark}, color);
         }
     }
     markDirtyGeometry();
 
     DEBUG_ASSERT(reserved == vertexUpdater.index());
 
-    material().setUniform(1, m_color);
     markDirtyMaterial();
 
     return true;
