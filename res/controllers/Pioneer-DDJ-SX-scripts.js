@@ -2421,12 +2421,17 @@ PioneerDDJSX.rotarySelector = function(channel, control, value, status) {
     PioneerDDJSX.rotarySelectorChanged = true;
 };
 
+// SHIFT + кручение ручки BROWSE: идём по боковому списку - Треки, Auto DJ,
+// Списки воспроизведения, Контейнеры, Компьютер, Записи, История, Анализ.
+// Раньше здесь было MoveHorizontal: ручка перебирала КОЛОНКИ таблицы
+// (альбом, исполнитель, тональность, дата) - на станции это никому не нужно.
+// [Playlist],SelectPlaylist шлёт боковому дереву стрелку вверх/вниз и не
+// требует, чтобы фокус был в дереве: крутить можно откуда угодно.
 PioneerDDJSX.rotarySelectorShifted = function(channel, control, value, status) {
-    var delta = PioneerDDJSX.getRotaryDelta(value),
-        f = (delta > 0 ? "SelectNextPlaylist" : "SelectPrevPlaylist");
+    var delta = PioneerDDJSX.getRotaryDelta(value);
 
     PioneerDDJSX.showBrowsePage();
-    engine.setValue("[Library]", "MoveHorizontal", delta);
+    engine.setValue("[Playlist]", "SelectPlaylist", delta);
 };
 
 PioneerDDJSX.rotarySelectorClick = function(channel, control, value, status) {
