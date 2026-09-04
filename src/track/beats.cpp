@@ -703,6 +703,35 @@ std::optional<BeatsPointer> Beats::tryScale(BpmScale scale) const {
             m_subVersion));
 }
 
+std::optional<BeatsPointer> Beats::tryResample(
+        mixxx::audio::SampleRate newSampleRate) const {
+    if (!m_sampleRate.isValid() || !newSampleRate.isValid() ||
+            m_sampleRate == newSampleRate) {
+        return std::nullopt;
+    }
+
+    const double scale =
+            static_cast<double>(newSampleRate.value()) /
+            static_cast<double>(m_sampleRate.value());
+
+    std::vector<BeatMarker> markers;
+    markers.reserve(m_markers.size());
+    for (const auto& marker : std::as_const(m_markers)) {
+        markers.push_back(BeatMarker(
+                (marker.position() * scale).toNearestFrameBoundary(),
+                marker.beatsTillNextMarker()));
+    }
+
+    const auto newLastMarkerPosition =
+            (m_lastMarkerPosition * scale).toNearestFrameBoundary();
+
+    return BeatsPointer(new Beats(markers,
+            newLastMarkerPosition,
+            m_lastMarkerBpm,
+            newSampleRate,
+            m_subVersion));
+}
+
 std::optional<BeatsPointer> Beats::trySetBpm(mixxx::Bpm bpm) const {
     const auto it = cfirstmarker();
     return BeatsPointer(new Beats({}, *it, bpm, m_sampleRate, m_subVersion));

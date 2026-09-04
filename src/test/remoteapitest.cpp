@@ -368,6 +368,38 @@ TEST_F(RemoteApiTest, LibraryAnalysisImport) {
     EXPECT_EQ(call("GET", "/api/library/analysis")->status, 405);
 }
 
+// Отрицательный якорь VirtualDJ (первый удар «до» начала файла) нельзя
+// зажимать в 0 — сетка съезжает на |якорь|. Правильно: сдвинуть якорь на
+// целое число периодов бита вперёд, фаза сетки при этом сохраняется.
+TEST_F(RemoteApiTest, LibraryAnalysisNegativeAnchor) {
+    const QString location = getTestDir().filePath(kTrackLocation);
+    const QByteArray loadBody = QJsonDocument(QJsonObject{{"path", location}}).toJson();
+    ASSERT_EQ(call("POST", "/api/decks/1/load", "", loadBody)->status, 202);
+    Deck* pDeck = m_pPlayerManager->getDeck(0);
+    ASSERT_TRUE(waitUntil([&]() {
+        return pDeck->getEngineDeck()->getEngineBuffer()->isTrackLoaded() &&
+                pDeck->getLoadedTrack() != nullptr;
+    }));
+    TrackPointer pTrack = pDeck->getLoadedTrack();
+    ASSERT_NE(pTrack, nullptr);
+    const double rate = pTrack->getSampleRate();
+    ASSERT_GT(rate, 0.0);
+
+    // BPM 120 -> период 0.5 с. Якорь -1.3 с должен стать -1.3 + 3*0.5 = 0.2 с.
+    QJsonObject body;
+    body.insert("path", location);
+    body.insert("bpm", 120.0);
+    body.insert("beat_anchor_sec", -1.3);
+    auto r = call("POST", "/api/library/analysis", "", QJsonDocument(body).toJson());
+    ASSERT_EQ(r->status, 200) << r->body.toStdString();
+    EXPECT_TRUE(bodyJson(*r).value("beats_set").toBool());
+
+    auto pBeats = pTrack->getBeats();
+    ASSERT_TRUE(pBeats);
+    const double firstBeatSec = pBeats->findNextBeat(mixxx::audio::FramePos(-1.0)).value() / rate;
+    EXPECT_NEAR(firstBeatSec, 0.2, 0.5 / rate);
+}
+
 TEST_F(RemoteApiTest, RefusesLanBindWithoutToken) {
     mixxx::RemoteApiSettings settings;
     settings.localEnabled = false;

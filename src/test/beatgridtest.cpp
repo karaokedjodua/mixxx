@@ -233,4 +233,72 @@ TEST(BeatGridTest, BpmLockRejectsBeatsForTrackWithoutBeats) {
     EXPECT_TRUE(pTrack->isBpmLocked());
 }
 
+// A track whose source sample rate changes after the grid was set (e.g.
+// a 44.1 kHz track gets a 48 kHz .vdjstems companion) must keep its
+// beat grid and cue positions at the same wall-clock seconds. BPM is a
+// rate and is preserved; frame positions scale by newRate / oldRate.
+TEST(BeatGridTest, Resample) {
+    // --- Part 1: Beats::tryResample directly ---
+    constexpr auto kOldRate = mixxx::audio::SampleRate(44100);
+    constexpr auto kNewRate = mixxx::audio::SampleRate(48000);
+    constexpr mixxx::Bpm bpm(120.0);
+    constexpr double kScale = 48000.0 / 44100.0;
+
+    auto pGrid44 = Beats::fromConstTempo(kOldRate,
+            mixxx::audio::kStartFramePos,
+            bpm);
+    ASSERT_TRUE(pGrid44);
+
+    // Trivial cases: invalid or equal rate returns nullopt.
+    EXPECT_FALSE(pGrid44->tryResample(mixxx::audio::SampleRate()));
+    EXPECT_FALSE(pGrid44->tryResample(kOldRate));
+
+    auto resampled = pGrid44->tryResample(kNewRate);
+    ASSERT_TRUE(resampled.has_value());
+    ASSERT_TRUE(*resampled);
+    BeatsPointer pGrid48 = *resampled;
+
+    // BPM is a rate — preserved.
+    const auto trackEndPosition48 = mixxx::audio::FramePos{
+            180.0 * pGrid48->getSampleRate()};
+    EXPECT_DOUBLE_EQ(bpm.value(),
+            pGrid48->getBpmInRange(mixxx::audio::kStartFramePos,
+                            trackEndPosition48)
+                    .value());
+    EXPECT_EQ(kNewRate, pGrid48->getSampleRate());
+
+    // The first beat was at frame 0 → still frame 0.
+    // Pass a position just before frame 0 so findNextBeat returns frame 0.
+    EXPECT_NEAR(mixxx::audio::kStartFramePos.value(),
+            pGrid48->findNextBeat(
+                    mixxx::audio::FramePos(-1.0)).value(),
+            1.0);
+
+    // A beat that was 1.0 s in (frame 44100) is still 1.0 s in
+    // (frame 48000) after resampling. Pass a position just before
+    // the target so findNextBeat lands on it.
+    const mixxx::audio::FramePos beatAtOneSecond44(kOldRate.value());
+    const mixxx::audio::FramePos beatAtOneSecond48(kNewRate.value());
+    EXPECT_NEAR(beatAtOneSecond48.value(),
+            pGrid48->findNextBeat(
+                    mixxx::audio::FramePos(beatAtOneSecond48.value() - 1.0))
+                    .value(),
+            1.0);
+
+    // A beat 10 s in (frame 441000) rescales to frame 480000.
+    const mixxx::audio::FramePos beatAt10s48(10.0 * kNewRate.value());
+    EXPECT_NEAR(beatAt10s48.value(),
+            pGrid48->findNextBeat(
+                    mixxx::audio::FramePos(beatAt10s48.value() - 1.0))
+                    .value(),
+            1.0);
+
+    // Rescaling back must reproduce the original grid (round-trip).
+    auto roundTrip = pGrid48->tryResample(kOldRate);
+    ASSERT_TRUE(roundTrip.has_value());
+    ASSERT_TRUE(*roundTrip);
+    BeatsPointer pRoundTrip = *roundTrip;
+    EXPECT_TRUE(*pGrid44 == *pRoundTrip);
+}
+
 }  // namespace

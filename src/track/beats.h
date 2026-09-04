@@ -410,6 +410,15 @@ class Beats : private std::enable_shared_from_this<Beats> {
     /// failure.
     std::optional<BeatsPointer> tryScale(BpmScale scale) const;
 
+    /// Resample the beat grid: re-express every marker position in a new
+    /// sample rate so that beat times (seconds) stay the same. Use when
+    /// the source sample rate changes after the grid was set (e.g. a
+    /// 44100 Hz track gets a 48000 Hz .vdjstems companion). BPM is a
+    /// rate and is preserved. Returns nullopt if the old or new rate is
+    /// invalid or they are equal.
+    std::optional<BeatsPointer> tryResample(
+            mixxx::audio::SampleRate newSampleRate) const;
+
     /// Adjust the beats so the global average BPM matches `bpm`.
     //
     /// Returns a pointer to the modified beats object, or `nullopt` on

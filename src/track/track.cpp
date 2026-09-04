@@ -1872,13 +1872,71 @@ void Track::setAudioProperties(
 void Track::updateStreamInfoFromSource(
         mixxx::audio::StreamInfo&& streamInfo) {
     auto locked = lockMutex(&m_qMutex);
+    // Sample rate of the track as stored BEFORE this source update.
+    // Needed to detect a rate change and rescale the existing beat grid
+    // and cue positions so that their times (seconds) stay the same.
+    const auto oldSampleRate =
+            m_record.getMetadata().getStreamInfo().getSignalInfo().getSampleRate();
     bool updated = m_record.updateStreamInfoFromSource(streamInfo);
+    const auto newSampleRate =
+            m_record.getMetadata().getStreamInfo().getSignalInfo().getSampleRate();
 
     const bool importBeats = m_pBeatsImporterPending && !m_pBeatsImporterPending->isEmpty();
     const bool importCueInfos = m_pCueInfoImporterPending && !m_pCueInfoImporterPending->isEmpty();
 #ifdef __STEM__
     const bool importStemInfos = mixxx::StemInfoImporter::maybeStemFile(getLocation());
 #endif
+
+    // Resample the beat grid and cue positions if the source sample rate
+    // just changed AND we are not about to re-import them from the file.
+    // Pending imports come from the new source and are already at the
+    // new rate, so rescaling them would be wrong.
+    bool resampled = false;
+    const bool rateChanged = oldSampleRate.isValid() &&
+            newSampleRate.isValid() && oldSampleRate != newSampleRate;
+    if (rateChanged) {
+        kLogger.info() << "Source sample rate changed:"
+                       << oldSampleRate.value() << "->"
+                       << newSampleRate.value()
+                       << "Hz; rescaling beat grid and cue positions";
+        if (!importBeats && m_pBeats) {
+            auto resampledBeats = m_pBeats->tryResample(newSampleRate);
+            if (resampledBeats) {
+                m_pBeats = *resampledBeats;
+                m_record.refMetadata().refTrackInfo().setBpm(
+                        getBeatsPointerBpm(m_pBeats, getDuration()));
+                resampled = true;
+                kLogger.info() << "Rescaled beat grid to"
+                               << newSampleRate.value() << "Hz";
+            }
+        }
+        if (!importCueInfos && !m_cuePoints.isEmpty()) {
+            const double scale = static_cast<double>(newSampleRate.value()) /
+                    static_cast<double>(oldSampleRate.value());
+            for (const auto& pCue : std::as_const(m_cuePoints)) {
+                const auto startPos = pCue->getPosition();
+                if (!startPos.isValid()) {
+                    continue;
+                }
+                const auto newStart =
+                        (startPos * scale).toNearestFrameBoundary();
+                const auto length = pCue->getLengthFrames();
+                if (length > 0) {
+                    const mixxx::audio::FrameDiff_t scaledLength = length * scale;
+                    const auto newEnd = (newStart + scaledLength)
+                                                .toNearestFrameBoundary();
+                    pCue->setStartAndEndPosition(newStart, newEnd);
+                } else {
+                    pCue->setStartPosition(newStart);
+                }
+            }
+            resampled = true;
+            kLogger.info() << "Rescaled" << m_cuePoints.size()
+                           << "cue position(s) to"
+                           << newSampleRate.value() << "Hz";
+        }
+    }
+    updated = updated || resampled;
 
     if (!importBeats && !importCueInfos
 #ifdef __STEM__
@@ -1889,6 +1947,10 @@ void Track::updateStreamInfoFromSource(
         if (updated) {
             markDirtyAndUnlock(&locked);
             emit durationChanged();
+            if (resampled) {
+                emitBeatsAndBpmUpdated();
+                emit cuesUpdated();
+            }
         }
         return;
     }

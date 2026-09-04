@@ -7,6 +7,7 @@
 #include <QJsonValue>
 
 #include <algorithm>
+#include <cmath>
 
 #include "control/control.h"
 #include "control/controlobject.h"
@@ -474,8 +475,16 @@ void RemoteApiHandler::handleLibraryAnalysis(const QByteArray& body, RemoteApiRe
             replyError(pReply, 409, QStringLiteral("sample rate unknown yet"));
             return;
         }
-        const double anchorSec = o.value(QStringLiteral("beat_anchor_sec")).toDouble(0.0);
-        const mixxx::audio::FramePos anchor(std::max(0.0, anchorSec) * rate);
+        double anchorSec = o.value(QStringLiteral("beat_anchor_sec")).toDouble(0.0);
+        if (anchorSec < 0.0) {
+            // У VirtualDJ первый удар сетки может лежать «до» начала файла.
+            // Зажимать такой якорь в 0 нельзя — сетка съедет на |якорь|.
+            // Сетка периодична: сдвигаем якорь на целое число периодов
+            // бита вперёд, фаза при этом сохраняется.
+            const double periodSec = 60.0 / bpmValue;
+            anchorSec += periodSec * std::ceil(-anchorSec / periodSec);
+        }
+        const mixxx::audio::FramePos anchor(anchorSec * rate);
         const auto pBeats = mixxx::Beats::fromConstTempo(
                 sampleRate, anchor, bpm, QStringLiteral("vdj-import"));
         result.insert(QStringLiteral("beats_set"), pTrack->trySetBeats(pBeats));
