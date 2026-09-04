@@ -375,8 +375,11 @@ ReadableSampleFrames SoundSourceSTEM::readSampleFramesClamped(
                 SampleBuffer::WritableSlice(
                         m_auxBuffer.data(),
                         stemSampleLength));
-        m_pAuxStreams[slotIdx]->readSampleFrames(auxFrame);
-        SampleUtil::add(pTarget, m_auxBuffer.data(), stemSampleLength);
+        // Источник может вернуть меньше, чем просили (конец файла, сбой):
+        // хвост буфера иначе остался бы от прошлого куска и попал бы в звук.
+        SampleUtil::clear(m_auxBuffer.data(), stemSampleLength);
+        const auto auxRead = m_pAuxStreams[slotIdx]->readSampleFrames(auxFrame);
+        SampleUtil::add(pTarget, m_auxBuffer.data(), auxRead.readableLength());
     };
 
     if (stemCount == 1) {
