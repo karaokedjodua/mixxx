@@ -484,6 +484,8 @@ SoundSourceFFmpeg::SoundSourceFFmpeg(const QUrl& url, int wantedStreamIndex)
           m_pavStream(nullptr),
           m_pavDecodedFrame(nullptr),
           m_seekPrerollFrameCount(0),
+          m_nextDecodedFrameIndex(ReadAheadFrameBuffer::kUnknownFrameIndex),
+          m_timeBaseFrameTolerance(0),
           m_pavPacket(av_packet_alloc()),
           m_pavResampledFrame(nullptr),
           m_avutilVersion(avutil_version()),
@@ -800,6 +802,12 @@ SoundSource::OpenResult SoundSourceFFmpeg::tryOpen(
     m_frameBuffer = ReadAheadFrameBuffer(
             getSignalInfo(),
             frameBufferCapacityForStream(*m_pavStream));
+    // dj-station: одно деление шкалы времени контейнера в отсчётах. Для
+    // Matroska (1/1000) при 48 кГц это 48, для mp4/mp3 - ноль или единица.
+    m_timeBaseFrameTolerance = static_cast<SINT>(av_rescale_q(1,
+            m_pavStream->time_base,
+            av_make_q(1, m_pavStream->codecpar->sample_rate)));
+    m_nextDecodedFrameIndex = ReadAheadFrameBuffer::kUnknownFrameIndex;
 #if VERBOSE_DEBUG_LOG
     kLogger.debug() << "Frame buffer capacity:" << m_frameBuffer.capacity();
 #endif
@@ -1083,6 +1091,7 @@ bool SoundSourceFFmpeg::adjustCurrentPosition(SINT startIndex) {
     // The current position remains unknown until actually reading data
     // from the stream
     m_frameBuffer.reset();
+    m_nextDecodedFrameIndex = ReadAheadFrameBuffer::kUnknownFrameIndex;
 
     return true;
 }
@@ -1270,6 +1279,22 @@ ReadableSampleFrames SoundSourceFFmpeg::readSampleFramesClamped(
                 SINT streamFrameIndex =
                         convertStreamTimeToFrameIndex(
                                 *m_pavStream, m_pavDecodedFrame->pts);
+                // dj-station: метка времени может врать на долю кадра, если
+                // шкала контейнера грубее отсчёта (Matroska: миллисекунды).
+                // Пока расхождение с посчитанной позицией не больше одного
+                // деления шкалы - это округление, а не разрыв: верим счёту.
+                // Больше - настоящий разрыв или seek: верим метке и
+                // начинаем считать заново.
+                if (m_timeBaseFrameTolerance > 0 &&
+                        m_nextDecodedFrameIndex !=
+                                ReadAheadFrameBuffer::kUnknownFrameIndex) {
+                    const SINT drift = streamFrameIndex - m_nextDecodedFrameIndex;
+                    if (drift <= m_timeBaseFrameTolerance &&
+                            drift >= -m_timeBaseFrameTolerance) {
+                        streamFrameIndex = m_nextDecodedFrameIndex;
+                    }
+                }
+                m_nextDecodedFrameIndex = streamFrameIndex + decodedFrameCount;
 
 #if VERBOSE_DEBUG_LOG
                 if (streamFrameIndex < 0) {

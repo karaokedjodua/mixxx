@@ -188,6 +188,14 @@ class SoundSourceFFmpeg : public SoundSource {
     AVFrame* m_pavDecodedFrame;
     FrameCount m_seekPrerollFrameCount;
     ReadAheadFrameBuffer m_frameBuffer;
+    /// dj-station: где по счёту должен начаться следующий декодированный
+    /// кадр, если поток идёт без разрывов. Метки времени Matroska грубее
+    /// одного отсчёта, поэтому положение кадра ведём сами, а меткой только
+    /// проверяем, не случился ли настоящий разрыв.
+    SINT m_nextDecodedFrameIndex;
+    /// Сколько отсчётов помещается в одно деление шкалы времени контейнера -
+    /// допустимое расхождение метки с посчитанной позицией.
+    SINT m_timeBaseFrameTolerance;
     SwrContextPtr m_pSwrContext;
 
 #if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 28, 100) // FFmpeg 5.1
