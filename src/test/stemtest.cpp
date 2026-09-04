@@ -346,4 +346,56 @@ TEST_F(VdjStemsFixture, EveryStemDecodesDistinctAudio) {
     }
 }
 
+// Регресс на "цифровой песок". Метки времени Matroska идут в миллисекундах,
+// кадр AAC при 44100 длится 23.22 мс, и пересчёт меток в отсчёты каждый
+// третий кадр ошибался на 16-32 отсчёта: читалка принимала это за дыру и
+// заливала её тишиной. На живой станции это давало 31 провал в ноль в
+// секунду. Образец - непрерывная синусоида, в ней нулевых участков быть не
+// может, любой ряд нулей длиннее 16 кадров - это вставленная тишина.
+TEST_F(VdjStemsFixture, DecodesWithoutSilenceGaps) {
+    SoundSourceSTEM sourceStem(QUrl::fromLocalFile(m_filePath));
+
+    mixxx::AudioSource::OpenParams config;
+    config.setChannelCount(mixxx::audio::ChannelCount(8));
+    ASSERT_EQ(sourceStem.open(AudioSource::OpenMode::Strict, config),
+            AudioSource::OpenResult::Succeeded);
+
+    constexpr SINT kChannels = 8;
+    constexpr SINT kChunkFrames = 4096;
+    constexpr SINT kMaxZeroRun = 16;
+    const SINT startFrame = sourceStem.frameIndexRange().length() / 4;
+    const SINT totalFrames = qMin<SINT>(sourceStem.frameIndexRange().length() / 2,
+            static_cast<SINT>(sourceStem.getSignalInfo().getSampleRate()) * 4);
+    ASSERT_GT(totalFrames, kChunkFrames * 4);
+
+    SampleBuffer buffer(kChunkFrames * kChannels);
+    SINT zeroRun[kChannels] = {0};
+    SINT worstRun = 0;
+    SINT worstFrame = -1;
+    // Читаем кусками, как это делает движок: разрыв случается на стыке
+    // декодированных кадров и виден при любом размере куска.
+    for (SINT offset = 0; offset < totalFrames; offset += kChunkFrames) {
+        const SINT frames = qMin(kChunkFrames, totalFrames - offset);
+        const auto read = sourceStem.readSampleFrames(WritableSampleFrames(
+                mixxx::IndexRange::forward(startFrame + offset, frames),
+                SampleBuffer::WritableSlice(buffer.data(), frames * kChannels)));
+        ASSERT_EQ(read.frameLength(), frames) << "кадр " << startFrame + offset;
+        for (SINT frame = 0; frame < frames; frame++) {
+            for (SINT ch = 0; ch < kChannels; ch++) {
+                if (qAbs(buffer[frame * kChannels + ch]) < 1e-5f) {
+                    zeroRun[ch]++;
+                    if (zeroRun[ch] > worstRun) {
+                        worstRun = zeroRun[ch];
+                        worstFrame = startFrame + offset + frame;
+                    }
+                } else {
+                    zeroRun[ch] = 0;
+                }
+            }
+        }
+    }
+    EXPECT_LE(worstRun, kMaxZeroRun)
+            << "тишина длиной " << worstRun << " кадров у кадра " << worstFrame;
+}
+
 } // namespace

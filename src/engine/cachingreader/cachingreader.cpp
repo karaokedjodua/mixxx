@@ -50,7 +50,13 @@ CachingReader::CachingReader(const QString& group,
           // buffer, where new requests replace old requests when full. Those
           // old requests need to be returned immediately to the CachingReader
           // that must take ownership and free them!!!
-          m_chunkReadRequestFIFO(kNumberOfCachedChunksInMemory / 4),
+          // dj-station: стем-трек декодирует пять потоков AAC на кусок, и
+          // рабочий поток разгребает очередь медленнее, чем движок с
+          // подсказками её наполняет. При 20 местах на станции за минуту
+          // 445 раз "Failed to submit read request" - кусок не читался
+          // вовсе, и дека получала тишину. Обратный канал вмещает все куски,
+          // так что половина от их числа безопасна.
+          m_chunkReadRequestFIFO(kNumberOfCachedChunksInMemory / 2),
           // The capacity of the back channel must be equal to the number of
           // allocated chunks, because the worker use writeBlocking(). Otherwise
           // the worker could get stuck in a hot loop!!!
