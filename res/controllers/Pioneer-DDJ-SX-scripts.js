@@ -2380,21 +2380,20 @@ PioneerDDJSX.loadPrepareButton = function(channel, control, value, status) {
     }
 };
 
-// BACK. На корпусе эта кнопка стоит вплотную к LOAD PREPARE (прослушке) в
-// блоке BROWSE - то есть ровно под пальцем, когда листаешь фонотеку.
-// Раньше она перебирала фокус по кругу (список -> дерево -> поиск), и до
-// поиска надо было жать дважды. Теперь это переключатель ПОИСК <-> СПИСОК:
-// экранная клавиатура ходит за фокусом, поэтому одна и та же кнопка и
-// вызывает её (когда нужно набрать), и убирает (когда нужно листать).
+// BACK = «на уровень выше», как на CDJ-2000, XDJ-RX3 и в Serato на этом же
+// корпусе: из списка треков обратно в дерево слева (Треки, Auto DJ, Списки
+// воспроизведения, Контейнеры, Компьютер, Записи, История, Анализ) и назад.
+// Ручка после этого листает то, что в фокусе, а её нажатие - «войти».
+// Поиск на этой кнопке был ошибкой: у консолей на BACK всегда навигация.
 PioneerDDJSX.backButton = function(channel, control, value, status) {
     if (!value) {
         // Только на нажатие: на отпускании переключились бы обратно.
         return;
     }
     PioneerDDJSX.showBrowsePage();
-    // [Library],focused_widget: 1 = поиск, 3 = список треков.
+    // [Library],focused_widget: 2 = дерево слева, 3 = список треков.
     var focus = engine.getValue("[Library]", "focused_widget");
-    engine.setValue("[Library]", "focused_widget", focus === 1 ? 3 : 1);
+    engine.setValue("[Library]", "focused_widget", focus === 2 ? 3 : 2);
 };
 
 // SHIFT + BACK. На корпусе это VIEW - у Serato кнопка перебирает виды
@@ -2438,11 +2437,11 @@ PioneerDDJSX.rotarySelectorClick = function(channel, control, value, status) {
     script.toggleControl("[Library]", "GoToItem");
 };
 
-// SHIFT + нажатие ручки BROWSE: фокус ДЕРЕВО <-> СПИСОК.
-// Боковой список (Треки, Auto DJ, Списки, Контейнеры, Компьютер, Записи,
-// История, Анализ) руками достаётся только пальцем, а во время сета до него
-// не дотянуться. Сюда же он и просился: ручка рядом, и после переключения
-// та же ручка листает дерево, потому что MoveVertical идёт в то, что в фокусе.
+// SHIFT + нажатие ручки BROWSE: ПОИСК <-> список.
+// У XDJ-RX3 поиск вызывают пальцем по полю на экране - у нас это тоже
+// работает, клавиатура ходит за фокусом. Но посреди сета до экрана тянуться
+// далеко, поэтому тот же вызов есть и на пульте. На BACK его вешать нельзя:
+// там по всем консолям навигация «на уровень выше».
 // Раньше здесь было добавление в Auto DJ - оно есть в контекстном меню трека,
 // а Auto DJ на станции не используют.
 PioneerDDJSX.rotarySelectorShiftedClick = function(channel, control, value, status) {
@@ -2450,9 +2449,9 @@ PioneerDDJSX.rotarySelectorShiftedClick = function(channel, control, value, stat
         return;
     }
     PioneerDDJSX.showBrowsePage();
-    // [Library],focused_widget: 2 = дерево слева, 3 = список треков.
+    // [Library],focused_widget: 1 = поиск, 3 = список треков.
     var focus = engine.getValue("[Library]", "focused_widget");
-    engine.setValue("[Library]", "focused_widget", focus === 2 ? 3 : 2);
+    engine.setValue("[Library]", "focused_widget", focus === 1 ? 3 : 1);
 };
 
 
