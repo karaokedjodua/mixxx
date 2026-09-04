@@ -856,7 +856,18 @@ elseif(GNU_GCC OR LLVM_CLANG)
     # unfortunately that work only on 64 bit CPUs or with sse2 enabled
     # The following optimisation flags makes the engine code ~3 times
     # faster, measured on a Atom CPU.
-    add_compile_options(-ffast-math -funroll-loops)
+    # dj-station: -ffast-math разрешает пересобирать порядок операций с
+    # плавающей точкой, MSVC так не делает. Мы подозревали в нём причину того,
+    # что сборка под Linux определяет другую тональность, и проверили:
+    # с -DFASTMATH=OFF цифры не поменялись НИ НА ОДНОМ из 23 треков. Значит,
+    # дело не в нём, а в разных сборках FFmpeg (звук декодируется чуть иначе).
+    # Ключ оставлен: сборке, которая только считает фонотеку, скорость движка
+    # не нужна, а строгая арифметика ничего не стоит.
+    option(FASTMATH "Allow -ffast-math (faster engine, but analysis differs from MSVC)" ON)
+    if(FASTMATH)
+      add_compile_options(-ffast-math)
+    endif()
+    add_compile_options(-funroll-loops)
     if(EMSCRIPTEN)
       # Optimize for size + speed when targeting Emscripten/WebAssembly
       # This is recommended as we use asyncify:

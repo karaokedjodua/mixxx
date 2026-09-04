@@ -2,6 +2,8 @@
 
 #include <QPainter>
 
+#include <algorithm>
+
 #include "track/track.h"
 #include "util/painterscope.h"
 #include "waveform/renderers/waveformwidgetrenderer.h"
@@ -14,6 +16,17 @@ namespace {
 constexpr int kBarBeats = 4;
 constexpr int kPhraseBeats16 = 16;
 constexpr int kPhraseBeats32 = 32;
+// Размер «квадратика» в пикселях: начало 32-й фразы заметнее начала 16-й,
+// как в VirtualDJ, — по нему на глаз ловится восьмёрка.
+constexpr double kPhraseMark16 = 9.0;
+constexpr double kPhraseMark32 = 13.0;
+
+// Остаток всегда неотрицательный: сетка может начинаться до нуля трека,
+// тогда beatIndex отрицательный и обычный % дал бы -3 вместо 13.
+inline int positiveMod(int value, int modulus) {
+    const int rest = value % modulus;
+    return rest < 0 ? rest + modulus : rest;
+}
 } // namespace
 
 WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidgetRenderer)
@@ -110,7 +123,7 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
     const Qt::Orientation orientation = m_waveformRenderer->getOrientation();
     const float rendererWidth = m_waveformRenderer->getWidth();
     const float rendererHeight = m_waveformRenderer->getHeight();
-    const float phraseMarkSize = kPhraseMarkSize * std::max(1.0, scaleFactor());
+    const double markScale = std::max(1.0, scaleFactor());
 
     int beatCount = 0;
     int barCount = 0;
@@ -123,14 +136,18 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
 
         xBeatPoint = qRound(xBeatPoint * devicePixelRatio) / devicePixelRatio;
 
-        const int barMod = ((beatIndex % kBarBeats) + kBarBeats) % kBarBeats;
-        const int phraseMod = ((beatIndex % kPhraseBeats) + kPhraseBeats) % kPhraseBeats;
+        const int barMod = positiveMod(beatIndex, kBarBeats);
+        const int phraseMod = positiveMod(beatIndex, kPhraseBeats16);
 
         if (phraseMod == 0) {
             if (phraseCount >= m_phrases.size()) {
                 m_phrases.resize(m_phrases.size() * 2);
                 m_phraseMarks.resize(m_phraseMarks.size() * 2);
             }
+            const float phraseMarkSize = static_cast<float>(
+                    (positiveMod(beatIndex, kPhraseBeats32) == 0 ? kPhraseMark32
+                                                                 : kPhraseMark16) *
+                    markScale);
             if (orientation == Qt::Horizontal) {
                 m_phrases[phraseCount].setLine(xBeatPoint, 0.0f, xBeatPoint, rendererHeight);
                 // «Квадратик» VDJ в верхнем краю волны.
