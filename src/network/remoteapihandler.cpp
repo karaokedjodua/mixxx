@@ -42,7 +42,9 @@ const Logger kLogger("RemoteApiHandler");
 // 15 раз в секунду на деку, и без склейки поток событий захлебнётся.
 constexpr int kFlushIntervalMs = 66;
 
-// Длина фразы в битах - та же, что у сведения по фразе (BpmControl).
+// Длина фразы в битах - та же, что у сведения по фразе (BpmControl) и у
+// разметки волны (waveformrenderbeat.cpp, обе версии). Менять - только всем
+// местам сразу, иначе разметка и сведение разъедутся.
 constexpr int kPhraseBeats = 32;
 
 QByteArray toJson(const QJsonObject& obj) {

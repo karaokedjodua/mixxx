@@ -63,7 +63,8 @@ class WTrackTableView : public WLibraryTableView {
     void setSelectedTracks(const QList<TrackId>& tracks);
     TrackId getCurrentTrackId() const;
     /// dj-station: вернуть курсор на трек, на котором стояли перед выходом.
-    void restoreLastSessionTrack();
+    /// true, если трек нашёлся в текущей модели и курсор поставлен.
+    bool restoreLastSessionTrack();
     bool setCurrentTrackId(const TrackId& trackId, int column = 0, bool scrollToTrack = false);
 
     void addToAutoDJBottom();
@@ -218,6 +219,9 @@ class WTrackTableView : public WLibraryTableView {
     /// dj-station: возвращали ли мы уже курсор на трек из прошлого запуска.
     /// Один раз за сеанс: дальше владелец листает сам, и лезть нельзя.
     bool m_restoredLastSessionTrack;
+    /// dj-station: модель, в которой уже ПЫТАЛИСЬ восстановить курсор.
+    /// Повторяем попытку только при смене модели, не на каждый тик.
+    const QAbstractItemModel* m_pRestoreTriedModel = nullptr;
     bool m_loadCachedOnly;
 
     ControlProxy* m_pCOTGuiTick;

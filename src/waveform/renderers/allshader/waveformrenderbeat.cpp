@@ -31,6 +31,7 @@ namespace {
 // второй проход по волне мы себе позволить не можем.
 constexpr int kBarBeats = 4;
 constexpr int kPhraseBeats16 = 16;
+// синхронно с kPhraseBeats в remoteapihandler.cpp (сведение по фразе)
 constexpr int kPhraseBeats32 = 32;
 
 constexpr float kBeatWidth = 1.f;

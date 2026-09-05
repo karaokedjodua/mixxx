@@ -162,13 +162,20 @@ void WTrackTableView::slotGuiTick50ms(double /*unused*/) {
     // остановился в прошлый раз. Делаем здесь, а не сразу после загрузки
     // модели: там таблица ещё пуста и ставить курсор некуда. Условие
     // «ничего не выделено» бережёт от вмешательства, если владелец уже
-    // что-то выбрал сам. Дальше это лишь одна проверка флага на тик.
+    // что-то выбрал сам.
+    // ЛОВУШКА: первая непустая модель может быть чужой (владелец успел открыть
+    // плейлист раньше списка треков). Поэтому «попытка» расходуется только на
+    // УСПЕХ или на выбор пользователя, а не на любую первую модель; при смене
+    // модели пробуем снова — getTrackRows на большой таблице в каждый тик нам
+    // не по карману, а раз в смену модели - бесплатно.
     if (!m_restoredLastSessionTrack) {
         const QAbstractItemModel* pModel = model();
-        if (pModel && pModel->rowCount() > 0) {
-            m_restoredLastSessionTrack = true;
-            if (getSelectedRows().isEmpty()) {
-                restoreLastSessionTrack();
+        if (pModel && pModel->rowCount() > 0 && pModel != m_pRestoreTriedModel) {
+            m_pRestoreTriedModel = pModel;
+            if (!getSelectedRows().isEmpty()) {
+                m_restoredLastSessionTrack = true;
+            } else if (restoreLastSessionTrack()) {
+                m_restoredLastSessionTrack = true;
             }
         }
     }
@@ -439,6 +446,11 @@ void WTrackTableView::loadTrackModel(QAbstractItemModel* pNewModel, bool restore
         restoreCurrentViewState();
     }
     initTrackMenu();
+
+    // dj-station: скрытие колонки обложек живёт в заголовке таблицы, а смена
+    // модели пересобирает его заново - перевешиваем на новую модель, иначе
+    // кнопка «ОБЛОЖКИ» и таблица расходятся до следующего нажатия.
+    applyCoverArtColumnVisibility();
 }
 
 void WTrackTableView::initTrackMenu() {
@@ -1688,29 +1700,30 @@ void WTrackTableView::setSelectedTracks(const QList<TrackId>& trackIds) {
 // dj-station: после запуска вернуть курсор туда, где он был перед выходом.
 // Своего состояния Mixxx между запусками не хранит - только в памяти, поэтому
 // номер трека кладём в настройки и здесь ищем его в текущей таблице.
-void WTrackTableView::restoreLastSessionTrack() {
+// Возвращает true, только если курсор реально поставлен.
+bool WTrackTableView::restoreLastSessionTrack() {
     const QString rawId = m_pConfig->getValue(
             ConfigKey(QStringLiteral("[Library]"),
                     QStringLiteral("LastSelectedTrackId")),
             QString());
     if (rawId.isEmpty()) {
-        return;
+        return false;
     }
     bool ok = false;
     const int idValue = rawId.toInt(&ok);
     if (!ok) {
-        return;
+        return false;
     }
     // Фигурные скобки обязательны: с круглыми это объявление функции,
     // а не переменной, и компилятор ругается непонятно на что.
     const QVariant idVariant(idValue);
     const TrackId trackId{idVariant};
     if (!trackId.isValid()) {
-        return;
+        return false;
     }
     // Трека может не быть в этой таблице - например, открыт плейлист.
     // Тогда просто ничего не делаем: чужой список перематывать нельзя.
-    setCurrentTrackId(trackId, 0, true);
+    return setCurrentTrackId(trackId, 0, true);
 }
 
 bool WTrackTableView::setCurrentTrackId(const TrackId& trackId, int column, bool scrollToTrack) {

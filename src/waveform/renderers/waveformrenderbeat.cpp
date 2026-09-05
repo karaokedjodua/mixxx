@@ -13,6 +13,7 @@ class QPaintEvent;
 
 namespace {
 // Каждый 4-й бит — такт, 16-й и 32-й — фразовые границы («квадратики» VDJ).
+// Синхронно с kPhraseBeats в remoteapihandler.cpp (сведение по фразе).
 constexpr int kBarBeats = 4;
 constexpr int kPhraseBeats16 = 16;
 constexpr int kPhraseBeats32 = 32;

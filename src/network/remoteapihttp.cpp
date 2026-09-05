@@ -224,6 +224,12 @@ QByteArray buildResponse(int status,
     if (!contentType.isEmpty()) {
         out.append("Content-Type: ");
         out.append(contentType);
+        // dj-station: тело у нас всегда UTF-8 (QJsonDocument::toJson). Без
+        // charset клиенты на PowerShell 5.1 читают его как ISO-8859-1, и
+        // кириллица в путях превращается в кашу - ловили на снимках сессии.
+        if (contentType == "application/json") {
+            out.append("; charset=utf-8");
+        }
         out.append("\r\n");
     }
     out.append("Content-Length: ");
