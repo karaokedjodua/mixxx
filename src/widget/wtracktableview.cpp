@@ -56,6 +56,7 @@ WTrackTableView::WTrackTableView(QWidget* pParent,
           m_dropIndicatorColor(kDefaultDropIndicatorColor),
           m_sorting(false),
           m_selectionChangedSinceLastGuiTick(true),
+          m_restoredLastSessionTrack(false),
           m_loadCachedOnly(false),
           m_dropRow(-1) {
     // Connect slots and signals to make the world go 'round.
@@ -108,6 +109,26 @@ void WTrackTableView::currentChanged(
     // (de_DE, fr_FR, fr_CH and probably others).
     // Reset Qt::WA_InputMethodEnabled right away if no editor is open
     QTableView::currentChanged(current, previous);
+
+    // dj-station: запоминаем, на каком треке стоял курсор. После перезапуска
+    // владелец не должен искать его заново - на слабой машине это минуты.
+    // setValue пишет в память, на диск настройки уходят при выходе, поэтому
+    // на каждое движение курсора диск не трогается.
+    if (current.isValid()) {
+        TrackModel* pTrackModel = getTrackModel();
+        if (pTrackModel) {
+            const TrackId trackId = pTrackModel->getTrackId(current);
+            if (trackId.isValid()) {
+                // TrackId прячет своё число намеренно: наружу отдаётся
+                // только строкой или QVariant. Храним строкой.
+                m_pConfig->setValue(
+                        ConfigKey(QStringLiteral("[Library]"),
+                                QStringLiteral("LastSelectedTrackId")),
+                        trackId.toString());
+            }
+        }
+    }
+
     if (state() != QTableView::EditingState) {
         // Does not interfere with hovered Star delegate, the only editor that
         // is opened on hover.
@@ -405,7 +426,14 @@ void WTrackTableView::loadTrackModel(QAbstractItemModel* pNewModel, bool restore
 
     // trigger restoring scrollBar position, selection etc.
     if (restoreState) {
-        restoreCurrentViewState();
+        // Состояния в памяти нет только при первом показе таблицы за сеанс -
+        // то есть сразу после запуска. Тогда и возвращаем курсор туда, где
+        // владелец его оставил в прошлый раз.
+        const bool restored = restoreCurrentViewState();
+        if (!restored && !m_restoredLastSessionTrack) {
+            m_restoredLastSessionTrack = true;
+            restoreLastSessionTrack();
+        }
     }
     initTrackMenu();
 }
@@ -1652,6 +1680,34 @@ void WTrackTableView::setSelectedTracks(const QList<TrackId>& trackIds) {
                     QItemSelectionModel::Select | QItemSelectionModel::Rows);
         }
     }
+}
+
+// dj-station: после запуска вернуть курсор туда, где он был перед выходом.
+// Своего состояния Mixxx между запусками не хранит - только в памяти, поэтому
+// номер трека кладём в настройки и здесь ищем его в текущей таблице.
+void WTrackTableView::restoreLastSessionTrack() {
+    const QString rawId = m_pConfig->getValue(
+            ConfigKey(QStringLiteral("[Library]"),
+                    QStringLiteral("LastSelectedTrackId")),
+            QString());
+    if (rawId.isEmpty()) {
+        return;
+    }
+    bool ok = false;
+    const int idValue = rawId.toInt(&ok);
+    if (!ok) {
+        return;
+    }
+    // Фигурные скобки обязательны: с круглыми это объявление функции,
+    // а не переменной, и компилятор ругается непонятно на что.
+    const QVariant idVariant(idValue);
+    const TrackId trackId{idVariant};
+    if (!trackId.isValid()) {
+        return;
+    }
+    // Трека может не быть в этой таблице - например, открыт плейлист.
+    // Тогда просто ничего не делаем: чужой список перематывать нельзя.
+    setCurrentTrackId(trackId, 0, true);
 }
 
 bool WTrackTableView::setCurrentTrackId(const TrackId& trackId, int column, bool scrollToTrack) {

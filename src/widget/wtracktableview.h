@@ -62,6 +62,8 @@ class WTrackTableView : public WLibraryTableView {
     bool isTrackInCurrentView(const TrackId& trackId);
     void setSelectedTracks(const QList<TrackId>& tracks);
     TrackId getCurrentTrackId() const;
+    /// dj-station: вернуть курсор на трек, на котором стояли перед выходом.
+    void restoreLastSessionTrack();
     bool setCurrentTrackId(const TrackId& trackId, int column = 0, bool scrollToTrack = false);
 
     void addToAutoDJBottom();
@@ -213,6 +215,9 @@ class WTrackTableView : public WLibraryTableView {
     // Control the delay to load a cover art.
     mixxx::Duration m_lastUserAction;
     bool m_selectionChangedSinceLastGuiTick;
+    /// dj-station: возвращали ли мы уже курсор на трек из прошлого запуска.
+    /// Один раз за сеанс: дальше владелец листает сам, и лезть нельзя.
+    bool m_restoredLastSessionTrack;
     bool m_loadCachedOnly;
 
     ControlProxy* m_pCOTGuiTick;
