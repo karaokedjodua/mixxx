@@ -113,6 +113,15 @@ PioneerDDJSX.autoDJShuffleAfterSkip = false;
 PioneerDDJSX.jumpPreviewEnabled = true;
 PioneerDDJSX.jumpPreviewPosition = 0.3;
 
+// dj-station: прослушка идёт СЛЕДОМ за прокруткой, как в VirtualDJ.
+// Кручу - играет выбранный трек; кручу дальше - играет следующий;
+// нажал LOAD PREPARE - замолчало; нажал ещё раз - заиграло снова.
+// Штатное поведение было другим: каждый трек надо было нажать отдельно.
+PioneerDDJSX.previewFollowsSelection = true;
+// Пауза перед загрузкой: на быстрой прокрутке иначе будет открываться
+// десяток файлов подряд, а планшет слабый. Считается от последнего щелчка.
+PioneerDDJSX.previewDelayMs = 260;
+
 // If true, pad press in SAMPLER-PAD-MODE repeatedly causes sampler to play
 // loaded track from cue-point, else it causes to play loaded track from the beginning (default: false).
 PioneerDDJSX.samplerCueGotoAndPlay = false;
@@ -139,6 +148,8 @@ PioneerDDJSX.returnToPerformanceOnLoad = true;
 
 PioneerDDJSX.shiftPressed = false;
 PioneerDDJSX.rotarySelectorChanged = false;
+PioneerDDJSX.previewEnabled = false;   // играет ли прослушка сейчас
+PioneerDDJSX.previewTimer = 0;         // отложенная загрузка при прокрутке
 PioneerDDJSX.panels = [false, false]; // view state of effect and sampler panel
 PioneerDDJSX.shiftPanelSelectPressed = false;
 
@@ -760,6 +771,11 @@ PioneerDDJSX.bindNonDeckControlConnections = function(bind) {
     // невидимой деки смысла нет.
     PioneerDDJSX.safeConnect("[Channel1]", "track_loaded", "PioneerDDJSX.trackLoadedTab", !bind);
     PioneerDDJSX.safeConnect("[Channel2]", "track_loaded", "PioneerDDJSX.trackLoadedTab", !bind);
+
+    // Прыжок к интересному месту трека делаем по факту загрузки, а не по
+    // отпусканию кнопки: при прокрутке кнопку никто не нажимает.
+    PioneerDDJSX.safeConnect("[PreviewDeck1]", "track_loaded",
+        "PioneerDDJSX.previewTrackLoaded", !bind);
 };
 
 
@@ -2358,25 +2374,66 @@ PioneerDDJSX.trackLoadedTab = function(value, group, control) {
     PioneerDDJSX.goToPerformance();
 };
 
+// Прослушка. Нужное владельцу поведение, как в VirtualDJ: пока прослушка
+// включена, она сама переезжает на тот трек, который выбран прокруткой.
+// Кнопка LOAD PREPARE стала простым выключателем: нажал - замолчало,
+// нажал ещё - заиграло с выбранного трека.
+PioneerDDJSX.previewSelected = function() {
+    PioneerDDJSX.previewTimer = 0;
+    if (!PioneerDDJSX.previewEnabled) { return; }
+    engine.setValue("[PreviewDeck1]", "LoadSelectedTrackAndPlay", true);
+};
+
+// Откладываем загрузку до конца прокрутки: щелчков от ручки приходит
+// много, а открывать файл на каждый - гарантированные подтормаживания.
+PioneerDDJSX.schedulePreview = function() {
+    if (!PioneerDDJSX.previewFollowsSelection) { return; }
+    if (!PioneerDDJSX.previewEnabled) { return; }
+    if (PioneerDDJSX.previewTimer) {
+        engine.stopTimer(PioneerDDJSX.previewTimer);
+    }
+    PioneerDDJSX.previewTimer = engine.beginTimer(
+        PioneerDDJSX.previewDelayMs, PioneerDDJSX.previewSelected, true);
+};
+
+PioneerDDJSX.previewTrackLoaded = function(value) {
+    if (!value) { return; }
+    if (!PioneerDDJSX.jumpPreviewEnabled) { return; }
+    engine.setValue("[PreviewDeck1]", "playposition",
+        PioneerDDJSX.jumpPreviewPosition);
+};
+
+PioneerDDJSX.previewStop = function() {
+    if (PioneerDDJSX.previewTimer) {
+        engine.stopTimer(PioneerDDJSX.previewTimer);
+        PioneerDDJSX.previewTimer = 0;
+    }
+    engine.setValue("[PreviewDeck1]", "stop", 1);
+};
+
 PioneerDDJSX.loadPrepareButton = function(channel, control, value, status) {
+    if (!value) { return; }   // только на нажатие
     PioneerDDJSX.showBrowsePage();
-    if (PioneerDDJSX.rotarySelectorChanged === true) {
-        if (value) {
+
+    if (!PioneerDDJSX.previewFollowsSelection) {
+        // Штатное поведение Mixxx, если режим выключат в настройках.
+        if (PioneerDDJSX.rotarySelectorChanged === true) {
             engine.setValue("[PreviewDeck1]", "LoadSelectedTrackAndPlay", true);
-        } else {
-            if (PioneerDDJSX.jumpPreviewEnabled) {
-                engine.setValue("[PreviewDeck1]", "playposition", PioneerDDJSX.jumpPreviewPosition);
-            }
             PioneerDDJSX.rotarySelectorChanged = false;
+        } else if (engine.getValue("[PreviewDeck1]", "stop")) {
+            script.toggleControl("[PreviewDeck1]", "play");
+        } else {
+            script.toggleControl("[PreviewDeck1]", "stop");
         }
+        return;
+    }
+
+    PioneerDDJSX.previewEnabled = !PioneerDDJSX.previewEnabled;
+    if (PioneerDDJSX.previewEnabled) {
+        // Нажали «включить» - играем сразу, без задержки прокрутки.
+        PioneerDDJSX.previewSelected();
     } else {
-        if (value) {
-            if (engine.getValue("[PreviewDeck1]", "stop")) {
-                script.toggleControl("[PreviewDeck1]", "play");
-            } else {
-                script.toggleControl("[PreviewDeck1]", "stop");
-            }
-        }
+        PioneerDDJSX.previewStop();
     }
 };
 
@@ -2418,6 +2475,7 @@ PioneerDDJSX.rotarySelector = function(channel, control, value, status) {
     PioneerDDJSX.showBrowsePage();
     engine.setValue("[Library]", "MoveVertical", delta);
     PioneerDDJSX.rotarySelectorChanged = true;
+    PioneerDDJSX.schedulePreview();
 };
 
 // SHIFT + кручение ручки BROWSE: идём по боковому списку - Треки, Auto DJ,
