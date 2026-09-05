@@ -110,25 +110,6 @@ void WTrackTableView::currentChanged(
     // Reset Qt::WA_InputMethodEnabled right away if no editor is open
     QTableView::currentChanged(current, previous);
 
-    // dj-station: запоминаем, на каком треке стоял курсор. После перезапуска
-    // владелец не должен искать его заново - на слабой машине это минуты.
-    // setValue пишет в память, на диск настройки уходят при выходе, поэтому
-    // на каждое движение курсора диск не трогается.
-    if (current.isValid()) {
-        TrackModel* pTrackModel = getTrackModel();
-        if (pTrackModel) {
-            const TrackId trackId = pTrackModel->getTrackId(current);
-            if (trackId.isValid()) {
-                // TrackId прячет своё число намеренно: наружу отдаётся
-                // только строкой или QVariant. Храним строкой.
-                m_pConfig->setValue(
-                        ConfigKey(QStringLiteral("[Library]"),
-                                QStringLiteral("LastSelectedTrackId")),
-                        trackId.toString());
-            }
-        }
-    }
-
     if (state() != QTableView::EditingState) {
         // Does not interfere with hovered Star delegate, the only editor that
         // is opened on hover.
@@ -177,6 +158,21 @@ void WTrackTableView::slotGuiTick50ms(double /*unused*/) {
         return;
     }
 
+    // dj-station: один раз за сеанс возвращаем курсор на трек, где владелец
+    // остановился в прошлый раз. Делаем здесь, а не сразу после загрузки
+    // модели: там таблица ещё пуста и ставить курсор некуда. Условие
+    // «ничего не выделено» бережёт от вмешательства, если владелец уже
+    // что-то выбрал сам. Дальше это лишь одна проверка флага на тик.
+    if (!m_restoredLastSessionTrack) {
+        const QAbstractItemModel* pModel = model();
+        if (pModel && pModel->rowCount() > 0) {
+            m_restoredLastSessionTrack = true;
+            if (getSelectedRows().isEmpty()) {
+                restoreLastSessionTrack();
+            }
+        }
+    }
+
     // if the user is stopped in the same row for more than 0.1 s,
     // we load un-cached cover arts as well.
     mixxx::Duration timeDelta = mixxx::Time::elapsed() - m_lastUserAction;
@@ -194,6 +190,20 @@ void WTrackTableView::slotGuiTick50ms(double /*unused*/) {
                     TrackPointer pTrack = pTrackModel->getTrack(indices.first());
                     if (pTrack) {
                         emit trackSelected(pTrack);
+                    }
+                    // dj-station: заодно запоминаем, на каком треке владелец
+                    // остановился, чтобы после перезапуска не искать его
+                    // заново. Место выбрано не случайно: сюда попадаем только
+                    // когда прокрутка уже остановилась, модель под рукой,
+                    // лишней работы ноль. Переопределение currentChanged для
+                    // этого не годится - у Mixxx оно только под Linux.
+                    // setValue пишет в память, файл сохраняется при выходе.
+                    const TrackId trackId = pTrackModel->getTrackId(indices.first());
+                    if (trackId.isValid()) {
+                        m_pConfig->setValue(
+                                ConfigKey(QStringLiteral("[Library]"),
+                                        QStringLiteral("LastSelectedTrackId")),
+                                trackId.toString());
                     }
                 }
             } else {
@@ -426,14 +436,7 @@ void WTrackTableView::loadTrackModel(QAbstractItemModel* pNewModel, bool restore
 
     // trigger restoring scrollBar position, selection etc.
     if (restoreState) {
-        // Состояния в памяти нет только при первом показе таблицы за сеанс -
-        // то есть сразу после запуска. Тогда и возвращаем курсор туда, где
-        // владелец его оставил в прошлый раз.
-        const bool restored = restoreCurrentViewState();
-        if (!restored && !m_restoredLastSessionTrack) {
-            m_restoredLastSessionTrack = true;
-            restoreLastSessionTrack();
-        }
+        restoreCurrentViewState();
     }
     initTrackMenu();
 }
