@@ -118,9 +118,14 @@ PioneerDDJSX.jumpPreviewPosition = 0.3;
 // нажал LOAD PREPARE - замолчало; нажал ещё раз - заиграло снова.
 // Штатное поведение было другим: каждый трек надо было нажать отдельно.
 PioneerDDJSX.previewFollowsSelection = true;
-// Пауза перед загрузкой: на быстрой прокрутке иначе будет открываться
-// десяток файлов подряд, а планшет слабый. Считается от последнего щелчка.
-PioneerDDJSX.previewDelayMs = 260;
+// Пауза перед загрузкой, от последнего щелчка ручки. Нужна только чтобы
+// непрерывное вращение не открывало по файлу на каждый щелчок.
+// ЗАМЕРЕНО (scripts/tests/preview-latency.py, 8 треков): сама загрузка до
+// первого звука занимает 43-165 мс, середина 86. То есть Mixxx быстрый, а
+// задержку, на которую жаловался владелец, давала эта пауза: было 260 мс,
+// в сумме под треть секунды. 70 мс достаточно, чтобы склеить вращение, и
+// человеком уже не замечается. Меньше ставить нельзя: щелчки пойдут поодиночке.
+PioneerDDJSX.previewDelayMs = 70;
 
 // If true, pad press in SAMPLER-PAD-MODE repeatedly causes sampler to play
 // loaded track from cue-point, else it causes to play loaded track from the beginning (default: false).
