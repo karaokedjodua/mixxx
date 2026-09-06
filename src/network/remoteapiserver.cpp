@@ -401,7 +401,16 @@ void RemoteApiServer::serve(Connection* pConn, const remoteapi::HttpRequest& req
             },
             Qt::QueuedConnection);
 
-    if (!reply->done.tryAcquire(1, m_settings.replyTimeoutMs)) {
+    // devices/rescan?force=1 переоткрывает звуковые карты в главном потоке:
+    // ASIO-инициализация на планшете станции занимает секунды. Общий таймаут
+    // ответа (3 с) превращал УСПЕШНОЕ переоткрытие в «main thread busy», и
+    // вызывающий принимал успех за провал. Для этого пути ждём дольше;
+    // каждый запрос живёт в потоке своего соединения, так что остальные
+    // клиенты не задерживаются.
+    const int waitMs = path.startsWith("/api/devices/rescan")
+            ? std::max(m_settings.replyTimeoutMs, 45000)
+            : m_settings.replyTimeoutMs;
+    if (!reply->done.tryAcquire(1, waitMs)) {
         // Главный поток занят. Бросаем ответ — он допишет его в буфер,
         // который никто больше не читает.
         reply->abandoned.store(true);
