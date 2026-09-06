@@ -773,6 +773,24 @@ void LibraryControl::slotMoveVertical(double v) {
         return;
     }
 
+    // Kiosk station: Mixxx may have no foreground window - it was started in
+    // the background, or another app/console stole the activation. The knob
+    // is the only way to navigate then, so don't let focus bookkeeping kill
+    // it: m_focusedWidget is a stale cache at that point anyway. Send the key
+    // event straight to the active track table, like slotMoveTrack() does for
+    // playlist reordering - no widget focus required.
+    if (!QApplication::focusWindow() && m_pLibraryWidget) {
+        WTrackTableView* pTrackTableView = m_pLibraryWidget->getCurrentTrackTableView();
+        if (pTrackTableView) {
+            const auto key = (v < 0) ? Qt::Key_Up : Qt::Key_Down;
+            const auto times = static_cast<unsigned short>(std::abs(v));
+            QKeyEvent event = QKeyEvent{
+                    QEvent::KeyPress, key, Qt::NoModifier, QString(), false, times};
+            QApplication::sendEvent(pTrackTableView, &event);
+        }
+        return;
+    }
+
     switch (m_focusedWidget) {
     case FocusWidget::Sidebar: {
         int i = static_cast<int>(v);
@@ -817,26 +835,7 @@ void LibraryControl::slotMoveVertical(double v) {
     default:
         // 'Unknown' uncategorized widget like a QComboBox. Return to not alter
         // any WBeatSpinBox or WEffectSelector
-        if (QApplication::focusWindow()) {
-            setLibraryFocus(FocusWidget::TracksTable);
-            return;
-        }
-        // Kiosk station: no Mixxx window has the foreground (Mixxx was started
-        // in the background, or another app stole the activation). Navigation
-        // from the controller must still work - the station has no keyboard,
-        // so there is no way to regain the focus remotely. Send the key event
-        // directly to the active track table, like slotMoveTrack() does for
-        // playlist reordering. No widget focus required.
-        if (m_pLibraryWidget) {
-            WTrackTableView* pTrackTableView = m_pLibraryWidget->getCurrentTrackTableView();
-            if (pTrackTableView) {
-                const auto key = (v < 0) ? Qt::Key_Up : Qt::Key_Down;
-                const auto times = static_cast<unsigned short>(std::abs(v));
-                QKeyEvent event = QKeyEvent{
-                        QEvent::KeyPress, key, Qt::NoModifier, QString(), false, times};
-                QApplication::sendEvent(pTrackTableView, &event);
-            }
-        }
+        setLibraryFocus(FocusWidget::TracksTable);
         return;
     }
     const auto key = (v < 0) ? Qt::Key_Up : Qt::Key_Down;
@@ -1143,6 +1142,17 @@ void LibraryControl::slotGoToItem(double v) {
         return;
     }
 
+    // Kiosk station, no foreground window (see slotMoveVertical): activate
+    // the selected track right away instead of failing to set the focus and
+    // silently doing nothing.
+    if (!QApplication::focusWindow() && m_pLibraryWidget) {
+        WTrackTableView* pTrackTableView = m_pLibraryWidget->getCurrentTrackTableView();
+        if (pTrackTableView) {
+            pTrackTableView->activateSelectedTrack();
+        }
+        return;
+    }
+
     switch (m_focusedWidget) {
     case FocusWidget::Sidebar:
         // Focus the library if this is a leaf node in the tree
@@ -1197,16 +1207,6 @@ void LibraryControl::slotGoToItem(double v) {
     case FocusWidget::Searchbar:
     case FocusWidget::None:
     default:
-        if (!QApplication::focusWindow() && m_pLibraryWidget) {
-            // Kiosk station, no Mixxx window in the foreground: activate the
-            // selected track right away instead of failing to set the focus
-            // and silently doing nothing.
-            WTrackTableView* pTrackTableView = m_pLibraryWidget->getCurrentTrackTableView();
-            if (pTrackTableView) {
-                pTrackTableView->activateSelectedTrack();
-            }
-            return;
-        }
         setLibraryFocus(FocusWidget::TracksTable);
     }
 }
