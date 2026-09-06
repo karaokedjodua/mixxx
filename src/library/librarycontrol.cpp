@@ -817,7 +817,26 @@ void LibraryControl::slotMoveVertical(double v) {
     default:
         // 'Unknown' uncategorized widget like a QComboBox. Return to not alter
         // any WBeatSpinBox or WEffectSelector
-        setLibraryFocus(FocusWidget::TracksTable);
+        if (QApplication::focusWindow()) {
+            setLibraryFocus(FocusWidget::TracksTable);
+            return;
+        }
+        // Kiosk station: no Mixxx window has the foreground (Mixxx was started
+        // in the background, or another app stole the activation). Navigation
+        // from the controller must still work - the station has no keyboard,
+        // so there is no way to regain the focus remotely. Send the key event
+        // directly to the active track table, like slotMoveTrack() does for
+        // playlist reordering. No widget focus required.
+        if (m_pLibraryWidget) {
+            WTrackTableView* pTrackTableView = m_pLibraryWidget->getCurrentTrackTableView();
+            if (pTrackTableView) {
+                const auto key = (v < 0) ? Qt::Key_Up : Qt::Key_Down;
+                const auto times = static_cast<unsigned short>(std::abs(v));
+                QKeyEvent event = QKeyEvent{
+                        QEvent::KeyPress, key, Qt::NoModifier, QString(), false, times};
+                QApplication::sendEvent(pTrackTableView, &event);
+            }
+        }
         return;
     }
     const auto key = (v < 0) ? Qt::Key_Up : Qt::Key_Down;
@@ -1178,6 +1197,16 @@ void LibraryControl::slotGoToItem(double v) {
     case FocusWidget::Searchbar:
     case FocusWidget::None:
     default:
+        if (!QApplication::focusWindow() && m_pLibraryWidget) {
+            // Kiosk station, no Mixxx window in the foreground: activate the
+            // selected track right away instead of failing to set the focus
+            // and silently doing nothing.
+            WTrackTableView* pTrackTableView = m_pLibraryWidget->getCurrentTrackTableView();
+            if (pTrackTableView) {
+                pTrackTableView->activateSelectedTrack();
+            }
+            return;
+        }
         setLibraryFocus(FocusWidget::TracksTable);
     }
 }
