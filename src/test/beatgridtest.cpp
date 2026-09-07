@@ -242,7 +242,6 @@ TEST(BeatGridTest, Resample) {
     constexpr auto kOldRate = mixxx::audio::SampleRate(44100);
     constexpr auto kNewRate = mixxx::audio::SampleRate(48000);
     constexpr mixxx::Bpm bpm(120.0);
-    constexpr double kScale = 48000.0 / 44100.0;
 
     auto pGrid44 = Beats::fromConstTempo(kOldRate,
             mixxx::audio::kStartFramePos,

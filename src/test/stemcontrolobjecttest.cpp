@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <QElapsedTimer>
 #include <QScopedPointer>
 #include <QtDebug>
 #include <memory>
@@ -120,13 +121,14 @@ class StemControlFixture : public BaseSignalPathTest,
                         TrackPointer pNewTrack) { pLoadedTrack = pNewTrack; });
         BaseSignalPathTest::loadTrack(pDeck, pTrack);
 
-        for (int i = 0; i < 10000; ++i) {
-            if (pLoadedTrack == pTrack) {
-                break;
-            }
-            int maxtime = 1; // ms
-            QCoreApplication::processEvents(QEventLoop::WaitForMoreEvents, maxtime);
-            // 1 ms for waiting 10 s at max
+        // Итерации здесь не равны времени: processEvents с WaitForMoreEvents
+        // возвращается сразу, как только события есть, и на медленной машине
+        // цикл выгорал за доли секунды вместо обещанных 10 с. ALAC-стемы (пять
+        // потоков, холодный кэш) за это время загрузиться не успевали.
+        QElapsedTimer loadTimer;
+        loadTimer.start();
+        while (pLoadedTrack != pTrack && loadTimer.elapsed() < 30000) {
+            QCoreApplication::processEvents(QEventLoop::WaitForMoreEvents, 10);
         }
         QObject::disconnect(connection);
         if (pLoadedTrack != pTrack) {

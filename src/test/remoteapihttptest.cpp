@@ -92,7 +92,7 @@ TEST(RemoteApiHttp, QueryParsingDecodesPercentAndPlus) {
 TEST(RemoteApiHttp, ResponseCarriesStatusLengthAndBody) {
     const QByteArray resp = buildResponse(404, "application/json", "{\"error\":\"no\"}");
     EXPECT_TRUE(resp.startsWith("HTTP/1.1 404 Not Found\r\n"));
-    EXPECT_TRUE(resp.contains("Content-Type: application/json\r\n"));
+    EXPECT_TRUE(resp.contains("Content-Type: application/json; charset=utf-8\r\n"));
     EXPECT_TRUE(resp.contains("Content-Length: 14\r\n"));
     EXPECT_TRUE(resp.endsWith("\r\n\r\n{\"error\":\"no\"}"));
     EXPECT_STREQ(statusText(999), "Unknown");
