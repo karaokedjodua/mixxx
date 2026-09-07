@@ -155,6 +155,8 @@ TEST_F(RemoteApiTest, StatusAndDecks) {
     const QJsonObject d = bodyJson(*deck1);
     EXPECT_EQ(d.value("group").toString(), QStringLiteral("[Channel1]"));
     EXPECT_FALSE(d.value("loaded").toBool(true));
+    // Начальное значение зависит от конфига наушников — важно само поле.
+    EXPECT_TRUE(d.contains(QStringLiteral("pfl")));
 }
 
 TEST_F(RemoteApiTest, UnknownControlIs404) {
@@ -226,6 +228,48 @@ TEST_F(RemoteApiTest, LoadPlayPauseEject) {
     ASSERT_EQ(call("POST", "/api/decks/1/eject")->status, 200);
     EXPECT_TRUE(waitUntil([&]() { return pDeck->getLoadedTrack() == nullptr; }))
             << "eject не снял трек";
+}
+
+TEST_F(RemoteApiTest, SeekAndPfl) {
+    const ConfigKey pflKey(QStringLiteral("[Channel1]"), QStringLiteral("pfl"));
+    const ConfigKey playPosKey(QStringLiteral("[Channel1]"), QStringLiteral("playposition"));
+    const ConfigKey durationKey(QStringLiteral("[Channel1]"), QStringLiteral("duration"));
+    ASSERT_TRUE(ControlObject::exists(pflKey));
+    ASSERT_TRUE(ControlObject::exists(playPosKey));
+    ASSERT_TRUE(ControlObject::exists(durationKey));
+
+    // PFL: явные значения и переключение пустым телом, как кнопкой на пульте.
+    EXPECT_TRUE(bodyJson(*call("POST", "/api/decks/1/pfl", "", "{\"pfl\":true}"))
+                        .value("pfl")
+                        .toBool());
+    EXPECT_DOUBLE_EQ(ControlObject::get(pflKey), 1.0);
+    EXPECT_FALSE(bodyJson(*call("POST", "/api/decks/1/pfl", "", "{\"pfl\":false}"))
+                         .value("pfl")
+                         .toBool());
+    EXPECT_TRUE(bodyJson(*call("POST", "/api/decks/1/pfl")).value("pfl").toBool());
+    EXPECT_FALSE(bodyJson(*call("POST", "/api/decks/1/pfl")).value("pfl").toBool());
+
+    // seek приходит в секундах, а playposition у Mixxx — доля трека (0..1).
+    // Длительность живёт в ControlObject деки, поэтому грузить трек не нужно:
+    // проверяем пересчёт и кламп, а не движок, который долю уже умеет.
+    ControlObject::set(durationKey, 200.0);
+    auto seeked = call("POST", "/api/decks/1/seek", "", "{\"position\":50}");
+    ASSERT_EQ(seeked->status, 200);
+    EXPECT_NEAR(bodyJson(*seeked).value("playposition").toDouble(), 0.25, 1e-9);
+    EXPECT_NEAR(ControlObject::get(playPosKey), 0.25, 1e-9);
+
+    // За границами трека — кламп, а не ошибка и не выход за пределы.
+    ASSERT_EQ(call("POST", "/api/decks/1/seek", "", "{\"position\":1000}")->status, 200);
+    EXPECT_DOUBLE_EQ(ControlObject::get(playPosKey), 1.0);
+    ASSERT_EQ(call("POST", "/api/decks/1/seek", "", "{\"position\":-5}")->status, 200);
+    EXPECT_DOUBLE_EQ(ControlObject::get(playPosKey), 0.0);
+
+    EXPECT_EQ(call("POST", "/api/decks/1/seek")->status, 400);
+    EXPECT_EQ(call("POST", "/api/decks/1/seek", "", "{}")->status, 400);
+
+    // Пустая дека: длительность нулевая, пересчитывать секунды не во что.
+    ControlObject::set(durationKey, 0.0);
+    EXPECT_EQ(call("POST", "/api/decks/1/seek", "", "{\"position\":5}")->status, 409);
 }
 
 TEST_F(RemoteApiTest, LocalChannelServesStatus) {

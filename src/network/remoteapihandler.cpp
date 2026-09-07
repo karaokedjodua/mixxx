@@ -121,6 +121,9 @@ QJsonObject RemoteApiHandler::deckJson(int deckNumber) const {
     d.insert(QStringLiteral("bpm"), controlOrZero(group, QStringLiteral("bpm")));
     d.insert(QStringLiteral("rate"), controlOrZero(group, QStringLiteral("rate")));
     d.insert(QStringLiteral("duration"), controlOrZero(group, QStringLiteral("duration")));
+    // PFL пре-фейдерный: пульт по этому полю понимает, слышно ли деку в
+    // наушниках, когда кнопок контроллера под рукой нет.
+    d.insert(QStringLiteral("pfl"), controlOrZero(group, QStringLiteral("pfl")) > 0.5);
 #ifdef __STEM__
     d.insert(QStringLiteral("stem_count"), controlOrZero(group, QStringLiteral("stem_count")));
 #endif
@@ -397,6 +400,37 @@ void RemoteApiHandler::handleDeckAction(int deckNumber,
             ControlObject::set(playKey, 0.0);
         }
         pressButton(group, QStringLiteral("eject"));
+    } else if (action == "seek") {
+        // Перемотка с пульта. playposition у Mixxx нормализованный (0..1,
+        // ControlLinPotmeter в EngineBuffer, пишет в slotControlSeek), а
+        // снаружи приходят секунды - делим на длительность и зажимаем.
+        const QJsonValue positionValue =
+                QJsonDocument::fromJson(body).object().value(QStringLiteral("position"));
+        if (!positionValue.isDouble()) {
+            replyError(pReply, 400, QStringLiteral("position in seconds required"));
+            return;
+        }
+        const double duration = controlOrZero(group, QStringLiteral("duration"));
+        if (duration <= 0.0) {
+            replyError(pReply, 409, QStringLiteral("deck has no track"));
+            return;
+        }
+        const double fraction = std::clamp(positionValue.toDouble() / duration, 0.0, 1.0);
+        ControlObject::set(ConfigKey(group, QStringLiteral("playposition")), fraction);
+    } else if (action == "pfl") {
+        // Прослушка без кнопок контроллера: PFL пре-фейдерный, наушники слышат
+        // деку, зал молчит. Пустое тело - переключение, как кнопкой на пульте.
+        const ConfigKey pflKey(group, QStringLiteral("pfl"));
+        if (!ControlObject::exists(pflKey)) {
+            replyError(pReply, 404, QStringLiteral("deck has no pfl control"));
+            return;
+        }
+        const QJsonValue pflValue =
+                QJsonDocument::fromJson(body).object().value(QStringLiteral("pfl"));
+        const bool on = (pflValue.isBool() || pflValue.isDouble())
+                ? pflValue.toVariant().toBool()
+                : ControlObject::get(pflKey) <= 0.5;
+        ControlObject::set(pflKey, on ? 1.0 : 0.0);
     } else {
         replyError(pReply, 404, QStringLiteral("unknown deck action"));
         return;
