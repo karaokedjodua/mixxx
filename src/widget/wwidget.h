@@ -22,6 +22,7 @@ class WWidget : public QWidget, public WBaseWidget {
 
   protected:
     bool touchIsRightButton();
+    void resetTouchShift();
     bool event(QEvent* e) override;
     void setScaleFactor(double value) {
         m_scaleFactor = value;

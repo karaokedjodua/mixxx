@@ -35,6 +35,12 @@ bool WWidget::touchIsRightButton() {
     return m_pTouchShift->toBool();
 }
 
+void WWidget::resetTouchShift() {
+    if (m_pTouchShift) {
+        m_pTouchShift->set(0.0);
+    }
+}
+
 bool WWidget::event(QEvent* e) {
     if (e->type() == QEvent::ToolTip) {
         updateTooltip();
@@ -87,6 +93,9 @@ bool WWidget::event(QEvent* e) {
                 break;
             case QEvent::TouchEnd:
                 eventType = QEvent::MouseButtonRelease;
+                if (m_activeTouchButton == Qt::RightButton && m_pTouchShift) {
+                    m_pTouchShift->set(0.0);
+                }
                 break;
             default:
                 DEBUG_ASSERT(false);

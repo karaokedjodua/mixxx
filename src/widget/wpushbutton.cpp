@@ -394,6 +394,12 @@ void WPushButton::mousePressEvent(QMouseEvent * e) {
     }
 
     if (rightClick) {
+        if (objectName() == QStringLiteral("TouchMenuButton") ||
+                (touchIsRightButton() && objectName().contains("Touch", Qt::CaseInsensitive))) {
+            resetTouchShift();
+            restyleAndRepaint();
+            return;
+        }
         // This is the secondary button function always a Pushbutton
         // due the lack of visual feedback we do not allow a toggle function
         if (m_rightButtonMode == mixxx::control::ButtonMode::Push ||

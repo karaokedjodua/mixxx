@@ -258,6 +258,18 @@ void ControllerManager::slotSetUpDevices() {
         // The filename for this device name.
         QString deviceName = sanitizeDeviceName(name);
 
+        // For DJ Station with Pioneer DDJ-SX: auto-enable controller and assign preset
+        // if not explicitly disabled.
+        if (name.contains("DDJ-SX", Qt::CaseInsensitive)) {
+            if (m_pConfig->getValue(ConfigKey("[Controller]", deviceName), 1) != 0) {
+                m_pConfig->setValue(ConfigKey("[Controller]", deviceName), 1);
+            }
+            if (getConfiguredMappingFileForDevice(deviceName).isEmpty()) {
+                m_pConfig->setValue(ConfigKey(kSettingsGroup, deviceName),
+                        QStringLiteral("/home/dj/mixxx-settings/controllers/Pioneer DDJ-SX.midi.xml"));
+            }
+        }
+
         // Check if device is enabled
         if (!m_pConfig->getValue(ConfigKey("[Controller]", deviceName), 0)) {
             continue;
@@ -266,7 +278,11 @@ void ControllerManager::slotSetUpDevices() {
         // Check if device has a configured mapping
         QString mappingFilePath = getConfiguredMappingFileForDevice(deviceName);
         if (mappingFilePath.isEmpty()) {
-            continue;
+            if (name.contains("DDJ-SX", Qt::CaseInsensitive)) {
+                mappingFilePath = QStringLiteral("/home/dj/mixxx-settings/controllers/Pioneer DDJ-SX.midi.xml");
+            } else {
+                continue;
+            }
         }
 
         qDebug() << "Searching for controller mapping" << mappingFilePath

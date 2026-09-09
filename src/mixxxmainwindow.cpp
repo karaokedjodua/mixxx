@@ -368,44 +368,18 @@ void MixxxMainWindow::initialize() {
     }
 
     // Sound hardware setup
-    // Try to open configured devices. If that fails, display dialogs
-    // that allow to either retry, reconfigure devices or exit.
-    bool retryClicked;
-    do {
-        retryClicked = false;
-        SoundDeviceStatus result = m_pCoreServices->getSoundManager()->setupDevices();
-        if (result == SoundDeviceStatus::ErrorDeviceCount ||
-                result == SoundDeviceStatus::ErrorExcessiveOutputChannel) {
-            if (soundDeviceBusyDlg(&retryClicked) != QDialog::Accepted) {
-                exit(0);
-            }
-        } else if (result != SoundDeviceStatus::Ok) {
-            if (soundDeviceErrorMsgDlg(result, &retryClicked) !=
-                    QDialog::Accepted) {
-                exit(0);
-            }
-        }
-    } while (retryClicked);
-
-    // Test for at least one output device. If none, display another dialog
-    // that says "mixxx will barely work with no outs".
-    // In case of persisting errors, the user has already received a message
-    // above. So we can just check the output count here.
-    while (m_pCoreServices->getSoundManager()->getConfig().getOutputs().isEmpty()) {
-        // Exit when we press the Exit button in the noSoundDlg dialog
-        // only call it if result != OK
-        bool continueClicked = false;
-        if (noOutputDlg(&continueClicked) != QDialog::Accepted) {
-            exit(0);
-        }
-        if (continueClicked) {
-            break;
-        }
+    // dj-station: в режиме киоска никогда не блокируем запуск модальными диалогами!
+    // Если звуковая карта (Pioneer DDJ-SX) не подключена при старте, продолжаем
+    // без диалогов, не затирая сохранённый soundconfig.xml на диске.
+    // При подключении контроллера сработает /api/devices/rescan (или udev),
+    // который откроет DDJ-SX с исходной маршрутизацией.
+    SoundDeviceStatus result = m_pCoreServices->getSoundManager()->setupDevices();
+    if (result == SoundDeviceStatus::Ok) {
+        m_pCoreServices->getSoundManager()->getConfig().writeToDisk();
+    } else {
+        qWarning() << "DJ Station Kiosk: sound device not ready at startup (status:"
+                   << static_cast<int>(result) << "), continuing without modal dialogs.";
     }
-
-    // The user has either reconfigured devices or accepted no outputs,
-    // so it's now safe to write the new config to disk.
-    m_pCoreServices->getSoundManager()->getConfig().writeToDisk();
 
     // this has to be after the OpenGL widgets are created or depending on a
     // million different variables the first waveform may be horribly
